@@ -1,0 +1,208 @@
+{
+  "info": {
+    "_postman_id": "984cc2c5-2746-4ee9-9ac3-51db4320c837",
+    "name": "MERN OTP Auth + Profile API",
+    "description": "Collection for testing OTP-based mobile login + Profile CRUD\n\nBase URL: http://localhost:5000/api/auth\n\nSteps to test:\n1. Send OTP\n2. Verify OTP → get token & status\n3. If new → Create Profile (with token)\n4. Update Profile (with token)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "49917743",
+    "_collection_link": "https://go.postman.co/collection/49917743-984cc2c5-2746-4ee9-9ac3-51db4320c837?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "1. Send OTP",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"countryCode\":\"+91\",\n    \"mobile\": \"9876543210\",\n    \"role\":\"user\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/send-otp",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "send-otp"
+          ]
+        },
+        "description": "Send OTP to mobile number (currently logs to console)"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Verify OTP",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Response has token\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.token).to.be.a('string');",
+              "    pm.environment.set(\"authToken\", jsonData.token);",
+              "});",
+              "",
+              "pm.test(\"Has user status\", function () {",
+              "    pm.expect(pm.response.json().status).to.be.oneOf([\"new\", \"existing\"]);",
+              "    pm.environment.set(\"userStatus\", pm.response.json().status);",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"countryCode\":\"+91\",\n    \"mobile\": \"9876543210\",\n    \"otp\": \"286265\",\n    \"role\":\"user\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/verify-otp",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "verify-otp"
+          ]
+        },
+        "description": "Verify OTP → returns JWT token + status (new/existing)"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Create Profile (new user only)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{authToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "",
+            "value": "",
+            "type": "text",
+            "disabled": true
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"DURGAMALLIKARJUNA\",\n    \"email\": \"durgam@example.com\",\n    \"avatar\": \"https://example.com/avatar.jpg\",\n    \"notificationPreference\": \"all\",\n    \"dataAnalyticsEnabled\": true,\n    \"profileImageUrl\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\",\n    \"profileImageMime\": \"image/png\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/create-profile",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "create-profile"
+          ]
+        },
+        "description": "Create profile after OTP verification (only for new users)"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Update Profile",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{authToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text",
+            "disabled": true
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Durgam Updated\",\n    \"email\": \"durgam.new@example.com\",\n    \"notificationPreference\": \"important\",\n    \"dataAnalyticsEnabled\": false,\n    \"profileImageUrl\": \"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/8QAFRABAQAAAAAAAAAAAAAAAAAAAAb/2gAMAwEAAhEDEQA/AA==\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/profile",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "profile"
+          ]
+        },
+        "description": "Update any allowed profile fields"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/auth",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userStatus",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
