@@ -15,6 +15,7 @@ connectDB();
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/sessions', require('./routes/sessionRoutes'));
 
 // Root route (optional)
 app.get('/', (req, res) => res.send('Backend Running'));

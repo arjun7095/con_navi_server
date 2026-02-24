@@ -1,0 +1,258 @@
+{
+  "info": {
+    "_postman_id": "conflict-navigator-sessions-2026",
+    "name": "Conflict Navigator - Sessions API",
+    "description": "Postman collection for testing Conflict Navigator session endpoints\n\nBase URL: http://localhost:5000/api/sessions\n\nPrerequisites:\n1. Run /api/auth/verify-otp first to get accessToken\n2. Set environment variable: authToken = Bearer <your-token>\n3. All requests use Authorization: {{authToken}}",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Create New Session (Live or Post)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mode\": \"live\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}",
+          "host": ["{{baseUrl}}"]
+        },
+        "description": "Create a new live or post conflict session"
+      },
+      "response": []
+    },
+    {
+      "name": "2. List All My Sessions",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}",
+          "host": ["{{baseUrl}}"]
+        },
+        "description": "Get list of all sessions for the authenticated user"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get Single Session Details",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Has session data\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "    pm.expect(jsonData.session).to.be.an('object');",
+              "    pm.environment.set(\"currentSessionId\", jsonData.session._id);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/{{currentSessionId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{currentSessionId}}"]
+        },
+        "description": "Get full details of one session (uses last created session ID)"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Resume Session",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/{{currentSessionId}}/resume",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{currentSessionId}}", "resume"]
+        },
+        "description": "Resume the session and restart timing on current step"
+      },
+      "response": []
+    },
+    {
+      "name": "5. Update Progress - Example: Add feelings & move to next step",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"step\": \"request\",\n  \"data\": {\n    \"selectedFeelings\": [\"angry\", \"hurt\"],\n    \"distressLevel\": 8,\n    \"observation\": \"They raised their voice during the discussion\"\n  },\n  \"action\": \"next\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/{{currentSessionId}}/progress",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{currentSessionId}}", "progress"]
+        },
+        "description": "Update data + move to next step + calculate time"
+      },
+      "response": []
+    },
+    {
+      "name": "6. Pause Current Session",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"action\": \"pause\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/{{currentSessionId}}/progress",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{currentSessionId}}", "progress"]
+        },
+        "description": "Pause the session (stops timing)"
+      },
+      "response": []
+    },
+    {
+      "name": "7. Complete Session",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"action\": \"complete\",\n  \"data\": {\n    \"finalDistress\": 2,\n    \"finalStatement\": \"We reached mutual understanding\",\n    \"nonNegotiablesAgreed\": true\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/{{currentSessionId}}/progress",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{currentSessionId}}", "progress"]
+        },
+        "description": "Mark session as completed + add final data"
+      },
+      "response": []
+    },
+    {
+      "name": "8. Abandon Session (if user stops midway)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/{{currentSessionId}}/abandon",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{currentSessionId}}", "abandon"]
+        },
+        "description": "Mark session as abandoned"
+      },
+      "response": []
+    },
+    {
+      "name": "9. Get Session Timing Summary",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "{{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/{{currentSessionId}}/summary",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{currentSessionId}}", "summary"]
+        },
+        "description": "Get total time, per-step durations, distress change, etc."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/sessions",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "type": "string"
+    },
+    {
+      "key": "currentSessionId",
+      "value": "",
+      "type": "string",
+      "description": "Auto-set after creating or getting sessions"
+    }
+  ]
+}
