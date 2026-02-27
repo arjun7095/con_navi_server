@@ -1,29 +1,36 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-    countryCode:{
-        type:String,
-        required:true,
-        trim:true
-    },
+  firebaseUid: {
+    type: String,
+    required: true,
+    unique: true,
+    sparse: true,           // allows null if you keep old users during migration
+  },
+  countryCode: {
+    type: String,
+    required: true,
+    trim: true,
+  },
   mobile: {
     type: String,
     required: true,
     unique: true,
     trim: true,
   },
-  name: {
+  role: {
     type: String,
-    trim: true,
+    enum: ['user', 'admin', 'moderator'],
+    default: 'user',
   },
-  email: {
-    type: String,
-    trim: true,
-    lowercase: true,
-  },
-  // ── NEW FIELDS ────────────────────────────────────────────────
+  name:          { type: String, trim: true },
+  email:         { type: String, trim: true, lowercase: true },
   avatar: {
-    type: String,           // URL to avatar image (e.g. Cloudinary, AWS S3, or Gravatar)
+    type: String,
+    default: 'https://img.freepik.com/free-vector/user-circles-set_78370-4704.jpg',
+  },
+  profileImageUrl: {
+    type: String,
     default: 'https://img.freepik.com/free-vector/user-circles-set_78370-4704.jpg',
   },
   notificationPreference: {
@@ -35,25 +42,14 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
-  profileImageUrl: {
-    type: String,           // Could be same as avatar or separate (e.g. full-size vs thumbnail)
-    default: 'https://img.freepik.com/free-vector/user-circles-set_78370-4704.jpg',
+  isProfileComplete: {
+    type: Boolean,
+    default: false,
   },
-  role: {
-    type: String,
-    enum: ['user', 'admin', 'moderator'],
-    default: 'user',
-  },
-  isProfileComplete:{
-    type:Boolean,
-    default:false
-  },
-  // ──────────────────────────────────────────────────────────────
+  fcmTokens: [String],              // ← NEW: for push notifications
 
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
+  createdAt: { type: Date, default: Date.now },
+  lastLogin: { type: Date },
 });
 
 module.exports = mongoose.model('User', userSchema);

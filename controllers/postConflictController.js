@@ -1,0 +1,179 @@
+const PostConflictSession = require('../models/PostConflictSession');
+const { sendPushToUser } = require('./notificationController'); // assume you have this
+
+exports.createSession = async (req, res) => {
+  const userId = req.user.userId;  // from auth middleware
+
+  const session = new PostConflictSession({ userId, status: 'in_progress' });
+  await session.save();
+
+  res.status(201).json({
+    success: true,
+    sessionId: session._id,
+    message: 'Post-Conflict Session started',
+    nextStep: 1,
+  });
+};
+
+exports.updateStep1 = async (req, res) => {
+  const { sessionId } = req.params;
+  const { rating } = req.body;
+
+  if (!rating || rating < 1 || rating > 10) return res.status(400).json({ error: 'Invalid rating' });
+
+  const category = getDistressCategory(rating);
+
+  const session = await PostConflictSession.findById(sessionId);
+  if (!session || session.userId.toString() !== req.user.userId) return res.status(404).json({ error: 'Session not found' });
+  if (session.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
+
+  session.step1 = { rating, category };
+  session.status = 'in_progress';  // ensure
+  await session.save();
+
+  res.json({
+    success: true,
+    step1: session.step1,
+    nextStep: 2,
+  });
+};
+
+exports.updateStep2 = async (req, res) => {
+  const { sessionId } = req.params;
+  const { reflections } = req.body;  // array of 6 strings
+
+  if (!Array.isArray(reflections) || reflections.length !== 6) return res.status(400).json({ error: 'Exactly 6 reflections required' });
+
+  const session = await PostConflictSession.findById(sessionId);
+  if (!session || session.userId.toString() !== req.user.userId) return res.status(404).json({ error: 'Session not found' });
+
+  session.step2 = { reflections };
+  await session.save();
+
+  res.json({
+    success: true,
+    step1: session.step1,
+    step2: session.step2,
+    nextStep: 3,
+  });
+};
+
+exports.updateStep3 = async (req, res) => {
+  const { sessionId } = req.params;
+  const { rating } = req.body;
+
+  if (!rating || rating < 1 || rating > 10) return res.status(400).json({ error: 'Invalid rating' });
+
+  const category = getDistressCategory(rating);
+  const feedbackMessage = getFeedbackMessage(session.step1.rating, rating);  // e.g. "Excellent progress!"
+
+  const session = await PostConflictSession.findById(sessionId);
+  if (!session || session.userId.toString() !== req.user.userId) return res.status(404).json({ error: 'Session not found' });
+
+  session.step3 = { rating, category, feedbackMessage };
+  await session.save();
+
+  res.json({
+    success: true,
+    step1: session.step1,
+    step2: session.step2,
+    step3: session.step3,
+    nextStep: 4,
+  });
+};
+
+exports.completeSession = async (req, res) => {
+  const { sessionId } = req.params;
+
+  const session = await PostConflictSession.findById(sessionId);
+  if (!session || session.userId.toString() !== req.user.userId) return res.status(404).json({ error: 'Session not found' });
+
+  if (!session.step1 || !session.step2 || !session.step3) return res.status(400).json({ error: 'Complete all steps first' });
+
+  session.completedAt = new Date();
+  session.conflictTime = Math.round((session.completedAt - session.startedAt) / (1000 * 60));  // minutes
+  session.status = 'completed';
+  session.step4 = { summary: generateSummary(session) };  // e.g. "Your Reflection Summary: Experience: bg... etc."
+  await session.save();
+
+  // Send push notification
+  await sendPushToUser(session.userId, 'Reflection Complete', 'Great job processing your conflict! Check your summary.');
+
+  res.json({
+    success: true,
+    session: session,
+    message: 'Session completed',
+  });
+};
+
+// Helpers
+function getDistressCategory(rating) {
+  if (rating <= 3) return 'Low Distress';
+  if (rating <= 6) return 'Moderate Distress';
+  if (rating <= 9) return 'High Distress';
+  return 'Very High Distress';
+}
+
+function getFeedbackMessage(initial, final) {
+  if (final < initial) return 'Excellent progress! You\'ve successfully processed this conflict.';
+  if (final === initial) return 'Stable reflection - good work maintaining clarity.';
+  return 'Reflection noted - consider more strategies for reduction.';
+}
+
+function generateSummary(session) {
+  // Simple template – or integrate AI later
+  return `Your Reflection Summary:\nExperience: ${session.step2.reflections[0]}\nYour Response: ${session.step2.reflections[1]}\nUnderstanding Gained: ${session.step2.reflections[2]}\nUnderstanding the Exchange: ${session.step2.reflections[3]}\n...`;  // expand for all 6
+}
+
+// Updated getSessions (history list)
+exports.getSessions = async (req, res) => {
+  const sessions = await PostConflictSession.find({ userId: req.user.userId }).sort({ createdAt: -1 });
+  const enhancedSessions = sessions.map(session => ({
+    ...session.toObject(),
+    resumable: session.status !== 'completed',
+    nextStep: getNextStep(session),  // ← NEW helper
+  }));
+  res.json({ success: true, sessions: enhancedSessions });
+};
+
+// Updated getSession (for resumption)
+exports.getSession = async (req, res) => {
+  const { sessionId } = req.params;
+  const session = await PostConflictSession.findOne({ _id: sessionId, userId: req.user.userId });
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  res.json({
+    success: true,
+    session,
+    resumable: session.status !== 'completed',
+    nextStep: getNextStep(session),
+  });
+};
+
+// Optional: Explicit resume endpoint (if app needs to "reactivate")
+exports.resumeSession = async (req, res) => {
+  const { sessionId } = req.params;
+
+  const session = await PostConflictSession.findOne({ _id: sessionId, userId: req.user.userId });
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  if (session.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
+
+  session.lastUpdatedAt = new Date();  // mark as active
+  await session.save();
+
+  // Optional push: "Resuming your reflection – let's continue!"
+  await sendPushToUser(req.user.userId, 'Resume Reflection', 'Pick up where you left off in your post-conflict session.');
+
+  res.json({
+    success: true,
+    session,
+    nextStep: getNextStep(session),
+  });
+};
+function getNextStep(session) {
+  if (!session.step1) return 1;
+  if (!session.step2) return 2;
+  if (!session.step3) return 3;
+  if (!session.step4) return 4;
+  return null;  // completed
+}

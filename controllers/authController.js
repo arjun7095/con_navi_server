@@ -1,186 +1,105 @@
+const { auth } = require('../config/firebase');
 const User = require('../models/User');
-const jwt = require('jsonwebtoken');
-const OTP=require('../models/OTP')
 const { generateTokens } = require('../utils/jwt');
-// const { generateOTP, sendOTP, storeOTP, verifyOTP } = require('../utils/otpGenerator');
 
-function generateOTP() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-exports.sendOTP = async (req, res) => {
-  const { countryCode, mobile,role } = req.body;
+exports.verifyPhoneAndRole = async (req, res) => {
+  const { idToken, role, fcmToken } = req.body;
 
-  if (!countryCode || !mobile || !role) {
-    return res.status(400).json({ error: "All fields required", otpStatus: false });
+  if (!idToken) {
+    return res.status(400).json({ success: false, message: "idToken is required" });
   }
-  if (!/^\d{10}$/.test(mobile)) {
-    return res.status(400).json({ error: "Mobile must be 10 digits", otpStatus: false });
-  }
-  if (!/^\+\d{1,3}$/.test(countryCode)) {
-    return res.status(400).json({ error: "Invalid country code", otpStatus: false });
-  }
-  if (!['user', 'admin'].includes(role)) {
-    return res.status(400).json({ error: "Role must be 'user' or 'admin'", otpStatus: false });
+
+  if (!role || !['user', 'admin', 'moderator'].includes(role)) {
+    return res.status(400).json({ success: false, message: "Valid role required" });
   }
 
   try {
-        
-    // Reuse recent OTP (same OTP model for both)
-    const recent = await OTP.findOne({ mobile, role, expiresAt: { $gt: new Date() } });
-    if (recent) {
-      return res.json({
-        countryCode, mobile, role,
-        otp: recent.otp, // Remove in production
-        message: "OTP already sent",
-        otpStatus: true
-      });
+    // Verify Firebase ID token (mobile app got this after OTP confirmation)
+    const decoded = await auth.verifyIdToken(idToken);
+    const firebaseUid = decoded.uid;
+    const phoneNumber = decoded.phone_number; // e.g. +919876543210
+
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, message: "Phone number not found in token" });
     }
 
-    const otp = generateOTP();
-    await OTP.create({ countryCode, mobile, role, otp });
+    // Parse countryCode + mobile (simple split – improve if needed)
+    const countryCode = phoneNumber.startsWith('+') ? phoneNumber.substring(0, phoneNumber.indexOf(phoneNumber.match(/\d/)[0])) : '+';
+    const mobile = phoneNumber.replace(countryCode, '');
 
-    console.log(`OTP → ${mobile} (${role}): ${otp}`);
+    let user = await User.findOne({ firebaseUid });
 
-    return res.json({
-      countryCode, mobile, role,
-      otp, // Remove in production
-      message: "OTP sent successfully",
-      otpStatus: true
-    });
+    let isNewUser = false;
 
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Server error", otpStatus: false });
-  }
-};
-
-exports.verifyOTP = async (req, res) => {
-  const { countryCode, mobile, role, otp } = req.body;
-
-  // 1. Basic input validation
-  if (!countryCode || !mobile || !role || !otp) {
-    return res.status(400).json({
-      otpStatus: false,
-      error: "countryCode, mobile, role and otp are all required",
-    });
-  }
-
-  try {
-    // 2. Find the most recent OTP for this combination
-    const storedOTP = await OTP.findOne({ countryCode, mobile, role })
-      .sort({ createdAt: -1 })
-      .exec();
-
-    if (!storedOTP) {
-      return res.status(401).json({
-        otpStatus: false,
-        error: "No OTP found for this number and role",
+    if (!user) {
+      user = new User({
+        firebaseUid,
+        countryCode,
+        mobile,
+        role,               // trust client role on first signup (or restrict admin)
+        lastLogin: new Date(),
       });
+      await user.save();
+      isNewUser = true;
+    } else {
+      user.lastLogin = new Date();
+
+      // Optional: prevent role change after creation
+      // if (user.role !== role) { ... warning or reject ... }
+
+      await user.save();
     }
 
-    if (storedOTP.expiresAt < new Date()) {
-      await OTP.deleteOne({ _id: storedOTP._id }); // clean up expired
-      return res.status(401).json({
-        otpStatus: false,
-        error: "OTP has expired",
-      });
+    // Store/update FCM token for push
+    if (fcmToken && !user.fcmTokens.includes(fcmToken)) {
+      user.fcmTokens.push(fcmToken);
+      await user.save();
     }
 
-    if (storedOTP.otp !== otp) {
-      return res.status(401).json({
-        otpStatus: false,
-        error: "Invalid OTP",
-      });
-    }
-
-    // 3. OTP is valid → delete it immediately (one-time use)
-    await OTP.deleteOne({ _id: storedOTP._id });
-
-    // 4. Check if user already exists
-    let user = await User.findOne({ mobile });
-
-// If needed: also validate countryCode matches (extra safety)
-if (user && user.countryCode !== countryCode) {
-  return res.status(409).json({
-    otpStatus: false,
-    error: "Mobile number already registered with different country code",
-  });
-}
-
-let isNewUser = false;
-
-if (!user) {
-  user = new User({
-    countryCode,
-    mobile,
-    role,
-    isProfileComplete: false,
-  });
-  await user.save();
-  isNewUser = true;
-}
-
-    // 5. Generate tokens
-    const payload = {
+    const { accessToken, refreshToken } = generateTokens({
       userId: user._id.toString(),
       mobile: user.mobile,
       role: user.role,
-    };
+    });
 
-    const { accessToken, refreshToken } = generateTokens(payload);
-
-    // Save refresh token to user
+    // Optional: store refresh token
     user.refreshToken = refreshToken;
     await user.save();
 
-    // 6. Set refresh token in httpOnly cookie
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 7. Decide next action / screen
-    let nextAction = "UserDashboard"; // default for existing users
+    const nextAction = isNewUser || !user.isProfileComplete ? "CompleteProfile" : "UserDashboard";
 
-    if (isNewUser || !user.isProfileComplete) {
-      nextAction = "CompleteProfile";
-    }
-
-    // 8. Prepare safe user response (never send sensitive fields)
-    const userResponse = {
-      userId: user._id.toString(),
-      countryCode: user.countryCode,
-      mobile: user.mobile,
-      role: user.role,
-      name: user.name || null,
-      email: user.email || null,
-      isProfileComplete: !!user.isProfileComplete,
-      // avatar, profileImage, etc. — add if needed
-    };
-
-    // 9. Final success response
-    return res.status(200).json({
-      otpStatus: true,
-      message: isNewUser ? "Account created successfully" : "Login successful",
+    return res.json({
+      success: true,
+      message: isNewUser ? "Account created" : "Login successful",
       accessToken,
-      user: userResponse,
+      user: {
+        userId: user._id.toString(),
+        countryCode: user.countryCode,
+        mobile: user.mobile,
+        role: user.role,
+        name: user.name || null,
+        email: user.email || null,
+        avatar: user.avatar,
+        profileImageUrl: user.profileImageUrl,
+        notificationPreference: user.notificationPreference,
+        dataAnalyticsEnabled: user.dataAnalyticsEnabled,
+        isProfileComplete: user.isProfileComplete,
+      },
       nextAction,
     });
   } catch (err) {
-    console.error("verifyOTP error:", err);
-
-    if (err.code === 11000) {
-      return res.status(409).json({
-        otpStatus: false,
-        error: "Account conflict - please try again or contact support",
-      });
-    }
-
-    return res.status(500).json({
-      otpStatus: false,
-      error: "Internal server error",
+    console.error("Firebase verify error:", err);
+    return res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
+      error: err.message,
     });
   }
 };
