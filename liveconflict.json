@@ -1,0 +1,348 @@
+{
+  "info": {
+    "_postman_id": "live-conflict-testing-2026",
+    "name": "Conflict Navigator - Live Conflict (12 Steps)",
+    "description": "Full testing collection for Live Conflict sessions\n- Create → Step 1–12 → Pause/Resume → Complete\nAll requests are protected with Bearer token",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Prerequisites - Set Token",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Paste your accessToken from /verify-phone here",
+              "pm.environment.set(\"accessToken\", \"your-jwt-token-here\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}",
+          "host": ["{{baseUrl}}"]
+        },
+        "description": "Just a dummy request to remind you to set accessToken in environment"
+      },
+      "response": []
+    },
+    {
+      "name": "1. Create New Live Conflict Session",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": { "raw": "{{baseUrl}}/api/live-conflict/sessions", "host": ["{{baseUrl}}"], "path": ["api", "live-conflict", "sessions"] }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Update Step 1 – Initial Distress Rating",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rating\": 8\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/1",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "1"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Update Step 2 – Breathing Exercise Choice",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"doBreathing\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/2",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "2"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Update Step 3 – Feelings",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"presentFeelings\": [\"angry\", \"hurt\", \"frustrated\"],\n  \"desiredFeelings\": [\"calm\", \"understood\", \"peaceful\"]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/3",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "3"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "5. Step 4 – Choose Break (with resume time)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"break\": true,\n  \"breakReason\": \"Need to discuss with partner\",\n  \"resumeAt\": \"2026-02-27T22:30:00.000Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/4",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "4"]
+        },
+        "description": "After this, session should jump to step 12"
+      },
+      "response": []
+    },
+    {
+      "name": "6. Step 4 – Choose Continue (alternative)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"continue\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/4",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "4"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "7. Step 5 – Non-Negotiables Agreed",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"agreed\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/5",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "5"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "8. Step 6–10 – Add Conversation Cycle (Speaking)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"isSpeaking\": true,\n  \"content\": \"I felt ignored when you didn't respond to my message\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/6",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "6"]
+        },
+        "description": "Repeat this for listening (isSpeaking: false) or continueConversation: true to exit loop"
+      },
+      "response": []
+    },
+    {
+      "name": "9. Step 6–10 – Exit Conversation Loop",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"continueConversation\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/10",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "10"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Step 11 – Final Distress Rating",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rating\": 3\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/11",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "11"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. Step 12 – Complete Session",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/step/12",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "step", "12"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "12. Alternative: Direct Complete (Step 12 or force)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/complete",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "complete"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "13. Pause Session (any time)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Need to eat lunch\",\n  \"resumeAt\": \"2026-02-27T23:15:00.000Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/pause",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "pause"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "14. Resume Paused Session",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}/resume",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}", "resume"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "15. List All Live Sessions (History)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "16. Get Single Session Details",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/live-conflict/sessions/{{sessionId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "live-conflict", "sessions", "{{sessionId}}"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string",
+      "description": "Fill this after creating a session"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string",
+      "description": "From /verify-phone"
+    }
+  ]
+}

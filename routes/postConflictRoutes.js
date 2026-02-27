@@ -5,13 +5,13 @@ const protect = require('../middleware/auth');  // protect all
 
 router.use(protect);
 
-router.post('/sessions', postConflictController.createSession);
-router.put('/sessions/:sessionId/step1', postConflictController.updateStep1);
-router.put('/sessions/:sessionId/step2', postConflictController.updateStep2);
-router.put('/sessions/:sessionId/step3', postConflictController.updateStep3);
-router.put('/sessions/:sessionId/complete', postConflictController.completeSession);
-router.get('/sessions', postConflictController.getSessions);
-router.get('/sessions/:sessionId', postConflictController.getSession);
-router.get('/sessions/:sessionId/resume', postConflictController.resumeSession);
+router.post('/', postConflictController.createSession);
+router.put('/:sessionId/step1', postConflictController.updateStep1);
+router.put('/:sessionId/step2', postConflictController.updateStep2);
+router.put('/:sessionId/step3', postConflictController.updateStep3);
+router.put('/:sessionId/complete', postConflictController.completeSession);
+router.get('/', postConflictController.getSessions);
+router.get('/:sessionId', postConflictController.getSession);
+router.get('/:sessionId/resume', postConflictController.resumeSession);
 
 module.exports = router;
