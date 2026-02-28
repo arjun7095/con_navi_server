@@ -273,7 +273,8 @@ function generateSummary(session) {
 // Updated getSession (for resumption)
 exports.getSessions = async (req, res) => {
   const { sessionId } = req.params;
-  const session = await PostConflictSession.findOne({ _id: sessionId, userId: req.user.userId });
+  // const session = await PostConflictSession.findOne({ _id: sessionId, userId: req.user.userId });
+  const session = await PostConflictSession.findOne({ _id: sessionId });
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   res.json({
