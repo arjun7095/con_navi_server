@@ -36,7 +36,7 @@ const postConflictSessionSchema = new mongoose.Schema({
     feedbackMessage: { type: String },
   },
   step4: {
-    summary: { type: String },
+    status: { type: String },
   },
   conflictTime: { type: Number },
   startedAt: { type: Date, default: Date.now },

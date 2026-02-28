@@ -193,7 +193,7 @@ exports.completeSession = async (req, res) => {
     // Generate and save summary (if not already)
     if (!session.step4?.summary) {
       session.step4 = {
-        summary: generateSummary(session),
+        status: 'completed',
       };
     }
 
@@ -223,41 +223,41 @@ function getFeedbackMessage(initial, final) {
   return 'Reflection noted - consider more strategies for reduction.';
 }
 
-function generateSummary(session) {
-  if (!session.step2) {
-    return 'Reflection summary not available yet – complete Step 2 first.';
-  }
+// function generateSummary(session) {
+//   if (!session.step2) {
+//     return 'Reflection summary not available yet – complete Step 2 first.';
+//   }
 
-  const { experience, react, assumption, thoughts, understanding, terms = [] } = session.step2;
+//   const { experience, react, assumption, thoughts, understanding, terms = [] } = session.step2;
 
-  let summary = 'Your Reflection Summary:\n\n';
+//   let summary = 'Your Reflection Summary:\n\n';
 
-  summary += `Experience:\n${experience || 'Not provided'}\n\n`;
-  summary += `Your Reaction:\n${react || 'Not provided'}\n\n`;
-  summary += `Assumptions Made:\n${assumption || 'Not provided'}\n\n`;
-  summary += `Thoughts During Conflict:\n${thoughts || 'Not provided'}\n\n`;
-  summary += `Understanding Gained:\n${understanding || 'Not provided'}\n\n`;
+//   summary += `Experience:\n${experience || 'Not provided'}\n\n`;
+//   summary += `Your Reaction:\n${react || 'Not provided'}\n\n`;
+//   summary += `Assumptions Made:\n${assumption || 'Not provided'}\n\n`;
+//   summary += `Thoughts During Conflict:\n${thoughts || 'Not provided'}\n\n`;
+//   summary += `Understanding Gained:\n${understanding || 'Not provided'}\n\n`;
 
-  if (terms.length > 0) {
-    summary += 'Key Terms / Needs Identified:\n';
-    terms.forEach((term, index) => {
-      summary += `\nTerm ${index + 1}:\n`;
-      summary += `  Option: ${term.option || 'N/A'}\n`;
-      summary += `  Description: ${term.description || 'N/A'}\n`;
+//   if (terms.length > 0) {
+//     summary += 'Key Terms / Needs Identified:\n';
+//     terms.forEach((term, index) => {
+//       summary += `\nTerm ${index + 1}:\n`;
+//       summary += `  Option: ${term.option || 'N/A'}\n`;
+//       summary += `  Description: ${term.description || 'N/A'}\n`;
 
-      // Dynamically add any extra fields (str1, str2, note, etc.)
-      Object.entries(term)
-        .filter(([key]) => !['option', 'description'].includes(key))
-        .forEach(([key, value]) => {
-          summary += `  ${key}: ${value || 'N/A'}\n`;
-        });
-    });
-  } else {
-    summary += 'No terms/needs identified in this reflection.\n';
-  }
+//       // Dynamically add any extra fields (str1, str2, note, etc.)
+//       Object.entries(term)
+//         .filter(([key]) => !['option', 'description'].includes(key))
+//         .forEach(([key, value]) => {
+//           summary += `  ${key}: ${value || 'N/A'}\n`;
+//         });
+//     });
+//   } else {
+//     summary += 'No terms/needs identified in this reflection.\n';
+//   }
 
-  return summary.trim();
-}
+//   return summary.trim();
+// }
 
 // // Updated getSessions (history list)
 // exports.getSessions = async (req, res) => {
