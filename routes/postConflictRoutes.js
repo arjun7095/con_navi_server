@@ -3,7 +3,7 @@ const router = express.Router();
 const postConflictController = require('../controllers/postConflictController');
 const protect = require('../middleware/auth');  // protect all
 
-router.use(protect);
+// router.use(protect);
 
 router.post('/', postConflictController.createSession);
 router.put('/:sessionId/step1', postConflictController.updateStep1);

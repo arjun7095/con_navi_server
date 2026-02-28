@@ -259,19 +259,19 @@ function generateSummary(session) {
   return summary.trim();
 }
 
-// Updated getSessions (history list)
-exports.getSessions = async (req, res) => {
-  const sessions = await PostConflictSession.find({ userId: req.user.userId }).sort({ createdAt: -1 });
-  const enhancedSessions = sessions.map(session => ({
-    ...session.toObject(),
-    resumable: session.status !== 'completed',
-    nextStep: getNextStep(session),  // ← NEW helper
-  }));
-  res.json({ success: true, sessions: enhancedSessions });
-};
+// // Updated getSessions (history list)
+// exports.getSessions = async (req, res) => {
+//   const sessions = await PostConflictSession.find({ userId: req.user.userId }).sort({ createdAt: -1 });
+//   const enhancedSessions = sessions.map(session => ({
+//     ...session.toObject(),
+//     resumable: session.status !== 'completed',
+//     nextStep: getNextStep(session),  // ← NEW helper
+//   }));
+//   res.json({ success: true, sessions: enhancedSessions });
+// };
 
 // Updated getSession (for resumption)
-exports.getSession = async (req, res) => {
+exports.getSessions = async (req, res) => {
   const { sessionId } = req.params;
   const session = await PostConflictSession.findOne({ _id: sessionId, userId: req.user.userId });
   if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -280,7 +280,7 @@ exports.getSession = async (req, res) => {
     success: true,
     session,
     resumable: session.status !== 'completed',
-    nextStep: getNextStep(session),
+    // nextStep: getNextStep(session),
   });
 };
 
