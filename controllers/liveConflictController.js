@@ -174,7 +174,7 @@ exports.updateStep = async (req, res) => {
           // User wants to move to step 11
           session.currentStep = 11;
           updated = true;
-        } else if (isSpeaking === true) {
+        } else if (isSpeaking === true || isSpeaking === false) {
           // Add new cycle
           const lastCycle = session.conversationCycles[session.conversationCycles.length - 1];
           const cycleNumber = lastCycle ? lastCycle.cycleNumber + 1 : 1;
