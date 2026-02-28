@@ -9,7 +9,7 @@ const postConflictSessionSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['draft', 'in_progress', 'completed'],
-    default: 'draft',              // Default on creation
+    default: 'draft',
   },
   step1: {
     rating: { type: Number, min: 1, max: 10 },
@@ -33,21 +33,16 @@ const postConflictSessionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-// FIXED Pre-save hook
-postConflictSessionSchema.pre('save', function (next) {
+// Pre-save hook – next() removed as requested
+postConflictSessionSchema.pre('save', function () {
   this.lastUpdatedAt = new Date();
 
-  // IMPORTANT: On NEW documents (creation), do NOT override status
-  // Respect whatever was explicitly set (or default 'draft')
+  // On brand-new documents → do NOT override status
   if (this.isNew) {
-    // Optionally force 'draft' if nothing was set
-    if (!this.status) {
-      this.status = 'draft';
-    }
-    return;
+    return; // No next() — hook ends here
   }
 
-  // On UPDATES only — check step completion
+  // On updates only: check completion
   const hasAnyStep = this.step1 || this.step2 || this.step3;
   const hasAllSteps = this.step1 && this.step2 && this.step3 && this.step4;
 
@@ -55,7 +50,7 @@ postConflictSessionSchema.pre('save', function (next) {
     this.status = 'completed';
     this.completedAt = new Date();
 
-    // Optional: calculate conflict time if not already set
+    // Calculate conflict time if not already set
     if (this.startedAt && !this.conflictTime) {
       this.conflictTime = Math.round((this.completedAt - this.startedAt) / (1000 * 60)); // minutes
     }
@@ -64,6 +59,8 @@ postConflictSessionSchema.pre('save', function (next) {
   } else {
     this.status = 'draft';
   }
+
+  // No next() call — Mongoose will continue automatically in modern versions
 });
 
 module.exports = mongoose.model('PostConflictSession', postConflictSessionSchema);
