@@ -175,7 +175,7 @@ exports.completeSession = async (req, res) => {
     }
 
     // Ensure all steps are filled before completing
-    if (!session.step1 || !session.step2 || !session.step3 || !session.step4?.summary) {
+    if (!session.step1 || !session.step2 || !session.step3) {
       return res.status(400).json({
         success: false,
         message: 'All steps must be completed before finalizing the session',
