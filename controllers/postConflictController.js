@@ -202,7 +202,6 @@ exports.completeSession = async (req, res) => {
     res.json({
       success: true,
       message: 'Session completed successfully',
-      session,
     });
   } catch (error) {
     console.error('completeSession error:', error);
