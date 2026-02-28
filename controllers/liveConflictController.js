@@ -16,19 +16,19 @@ exports.createLiveSession = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const existingActive = await LiveConflictSession.findOne({
-      userId,
-      status: { $in: ['active', 'paused'] },
-    });
+    // const existingActive = await LiveConflictSession.findOne({
+    //   userId,
+    //   status: { $in: ['active', 'paused'] },
+    // });
 
-    if (existingActive) {
-      return res.status(400).json({
-        success: false,
-        message: 'You already have an active or paused Live Conflict session. Please resume or complete it first.',
-        sessionId: existingActive._id,
-        currentStep: existingActive.currentStep,
-      });
-    }
+    // if (existingActive) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'You already have an active or paused Live Conflict session. Please resume or complete it first.',
+    //     sessionId: existingActive._id,
+    //     currentStep: existingActive.currentStep,
+    //   });
+    // }
 
     const session = new LiveConflictSession({
       userId,
