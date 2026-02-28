@@ -125,27 +125,44 @@ exports.updateStep2 = async (req, res) => {
 };
 
 exports.updateStep3 = async (req, res) => {
-  const { sessionId } = req.params;
-  const { rating } = req.body;
+  try {
+    const { sessionId } = req.params;
+    const { rating } = req.body;
 
-  if (!rating || rating < 1 || rating > 10) return res.status(400).json({ error: 'Invalid rating' });
+    if (!rating || rating < 1 || rating > 10) {
+      return res.status(400).json({ success: false, message: 'Rating must be between 1 and 10' });
+    }
 
-  const category = getDistressCategory(rating);
-  const feedbackMessage = getFeedbackMessage(session.step1.rating, rating);  // e.g. "Excellent progress!"
+    const session = await PostConflictSession.findById(sessionId);
+    if (!session || session.userId.toString() !== req.user.userId) {
+      return res.status(404).json({ success: false, message: 'Session not found or unauthorized' });
+    }
 
-  const session = await PostConflictSession.findById(sessionId);
-  if (!session || session.userId.toString() !== req.user.userId) return res.status(404).json({ error: 'Session not found' });
+    // Optional: enforce step order
+    if (!session.step1?.rating) {
+      return res.status(400).json({
+        success: false,
+        message: 'Step 1 must be completed before Step 3',
+      });
+    }
 
-  session.step3 = { rating, category, feedbackMessage };
-  await session.save();
+    const category = getDistressCategory(rating);
+    const feedbackMessage = getFeedbackMessage(session.step1.rating, rating);
 
-  res.json({
-    success: true,
-    step1: session.step1,
-    step2: session.step2,
-    step3: session.step3,
-    nextStep: 4,
-  });
+    session.step3 = { rating, category, feedbackMessage };
+    await session.save();
+
+    res.json({
+      success: true,
+      step1: session.step1,
+      step2: session.step2,
+      step3: session.step3,
+      nextStep: 4,
+    });
+  } catch (error) {
+    console.error('updateStep3 error:', error);
+    res.status(500).json({ success: false, message: 'Server error while updating step 3' });
+  }
 };
 
 exports.completeSession = async (req, res) => {
