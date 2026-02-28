@@ -44,7 +44,7 @@ postConflictSessionSchema.pre('save', function (next) {
     if (!this.status) {
       this.status = 'draft';
     }
-    return next();
+    return;
   }
 
   // On UPDATES only — check step completion
