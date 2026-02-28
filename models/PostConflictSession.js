@@ -16,7 +16,19 @@ const postConflictSessionSchema = new mongoose.Schema({
     category: { type: String },
   },
   step2: {
-    reflections: [{ type: String }],
+    experience:    { type: String, trim: true },
+    react:         { type: String, trim: true },
+    assumption:    { type: String, trim: true },
+    thoughts:      { type: String, trim: true },
+    understanding: { type: String, trim: true },
+
+    // terms array: only option and description are enforced
+    // any extra fields (str1, str2, note, priority, etc.) are allowed dynamically
+    terms: [{
+      option:      { type: String, required: true, trim: true },
+      description: { type: String, required: true, trim: true },
+      // No other fields defined → MongoDB accepts anything extra
+    }],
   },
   step3: {
     rating: { type: Number, min: 1, max: 10 },
@@ -33,16 +45,16 @@ const postConflictSessionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-// Pre-save hook – next() removed as requested
+// Pre-save hook – only complete after step4 is filled
 postConflictSessionSchema.pre('save', function () {
   this.lastUpdatedAt = new Date();
 
-  // On brand-new documents → do NOT override status
+  // On new documents → skip status override
   if (this.isNew) {
-    return; // No next() — hook ends here
+    return;
   }
 
-  // On updates only: check completion
+  // On updates only
   const hasAnyStep = this.step1 || this.step2 || this.step3;
   const hasAllSteps = this.step1 && this.step2 && this.step3 && this.step4;
 
@@ -50,9 +62,8 @@ postConflictSessionSchema.pre('save', function () {
     this.status = 'completed';
     this.completedAt = new Date();
 
-    // Calculate conflict time if not already set
     if (this.startedAt && !this.conflictTime) {
-      this.conflictTime = Math.round((this.completedAt - this.startedAt) / (1000 * 60)); // minutes
+      this.conflictTime = Math.round((this.completedAt - this.startedAt) / (1000 * 60));
     }
   } else if (hasAnyStep) {
     this.status = 'in_progress';
@@ -60,7 +71,7 @@ postConflictSessionSchema.pre('save', function () {
     this.status = 'draft';
   }
 
-  // No next() call — Mongoose will continue automatically in modern versions
+  // No next() — modern Mongoose handles it
 });
 
 module.exports = mongoose.model('PostConflictSession', postConflictSessionSchema);

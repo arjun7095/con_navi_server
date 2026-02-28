@@ -39,23 +39,88 @@ exports.updateStep1 = async (req, res) => {
 };
 
 exports.updateStep2 = async (req, res) => {
-  const { sessionId } = req.params;
-  const { reflections } = req.body;  // array of 6 strings
+  try {
+    const { sessionId } = req.params;
+    const { reflection } = req.body;  // the new nested structure
 
-  if (!Array.isArray(reflections) || reflections.length !== 6) return res.status(400).json({ error: 'Exactly 6 reflections required' });
+    // 1. Basic payload validation
+    if (!reflection || typeof reflection !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'reflection object is required in the payload',
+      });
+    }
 
-  const session = await PostConflictSession.findById(sessionId);
-  if (!session || session.userId.toString() !== req.user.userId) return res.status(404).json({ error: 'Session not found' });
+    // 2. Validate named fields (optional – but good practice)
+    const requiredTextFields = ['experience', 'react', 'assumption', 'thoughts', 'understanding'];
+    for (const field of requiredTextFields) {
+      if (typeof reflection[field] !== 'string' || reflection[field].trim() === '') {
+        return res.status(400).json({
+          success: false,
+          message: `${field} must be a non-empty string`,
+        });
+      }
+    }
 
-  session.step2 = { reflections };
-  await session.save();
+    // 3. Validate terms array
+    const { terms } = reflection;
+    if (!Array.isArray(terms)) {
+      return res.status(400).json({
+        success: false,
+        message: 'terms must be an array',
+      });
+    }
 
-  res.json({
-    success: true,
-    step1: session.step1,
-    step2: session.step2,
-    nextStep: 3,
-  });
+    for (const term of terms) {
+      if (!term.option || typeof term.option !== 'string' || term.option.trim() === '') {
+        return res.status(400).json({
+          success: false,
+          message: 'Each term must have a non-empty "option" string',
+        });
+      }
+      if (!term.description || typeof term.description !== 'string' || term.description.trim() === '') {
+        return res.status(400).json({
+          success: false,
+          message: 'Each term must have a non-empty "description" string',
+        });
+      }
+      // Any extra fields (str1, str2, note, priority, etc.) are allowed and ignored here
+    }
+
+    // 4. Find and authorize session
+    const session = await PostConflictSession.findById(sessionId);
+    if (!session || session.userId.toString() !== req.user.userId) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+
+    // 5. Update step2 with new structure
+    session.step2 = {
+      experience:    reflection.experience    || '',
+      react:         reflection.react         || '',
+      assumption:    reflection.assumption    || '',
+      thoughts:      reflection.thoughts      || '',
+      understanding: reflection.understanding || '',
+      terms:         terms || [],               // array of objects with option + description + any extras
+    };
+
+    await session.save();
+
+    // 6. Return success response
+    res.json({
+      success: true,
+      step1: session.step1,
+      step2: session.step2,
+      nextStep: 3,
+      message: 'Step 2 updated successfully',
+    });
+  } catch (error) {
+    console.error('updateStep2 error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating step 2',
+      error: error.message,
+    });
+  }
 };
 
 exports.updateStep3 = async (req, res) => {
