@@ -42,6 +42,7 @@ exports.updateStep2 = async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { reflection } = req.body;  // the new nested structure
+    console.log('Received updateStep2 request:', { sessionId, reflection });
 
     // 1. Basic payload validation
     if (!reflection || typeof reflection !== 'object') {

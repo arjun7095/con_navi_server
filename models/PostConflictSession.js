@@ -23,11 +23,11 @@ const postConflictSessionSchema = new mongoose.Schema({
     understanding: { type: String, trim: true },
 
     // terms array: only option and description are enforced
-    // any extra fields (str1, str2, note, priority, etc.) are allowed dynamically
+    // extra fields (str1, str2, etc.) are stored dynamically
     terms: [{
       option:      { type: String, required: true, trim: true },
       description: { type: String, required: true, trim: true },
-      // No other fields defined → MongoDB accepts anything extra
+      // No other fields defined → MongoDB stores anything extra automatically
     }],
   },
   step3: {
@@ -45,33 +45,11 @@ const postConflictSessionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-// Pre-save hook – only complete after step4 is filled
+// Pre-save hook – only update lastUpdatedAt (no status logic here)
 postConflictSessionSchema.pre('save', function () {
   this.lastUpdatedAt = new Date();
-
-  // On new documents → skip status override
-  if (this.isNew) {
-    return;
-  }
-
-  // On updates only
-  const hasAnyStep = this.step1 || this.step2 || this.step3;
-  const hasAllSteps = this.step1 && this.step2 && this.step3 && this.step4;
-
-  if (hasAllSteps) {
-    this.status = 'completed';
-    this.completedAt = new Date();
-
-    if (this.startedAt && !this.conflictTime) {
-      this.conflictTime = Math.round((this.completedAt - this.startedAt) / (1000 * 60));
-    }
-  } else if (hasAnyStep) {
-    this.status = 'in_progress';
-  } else {
-    this.status = 'draft';
-  }
-
-  // No next() — modern Mongoose handles it
+  // No next() – modern Mongoose handles it automatically
+  // Status, completedAt, conflictTime now controlled ONLY from endpoints
 });
 
 module.exports = mongoose.model('PostConflictSession', postConflictSessionSchema);
