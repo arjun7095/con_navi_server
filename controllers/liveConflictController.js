@@ -169,48 +169,41 @@ exports.updateStep = async (req, res) => {
       case 10: {
         // Conversation cycle (speaking/listening)
         const { isSpeaking, continueConversation } = req.body;
-        const content='None';
+        const content='none';
         if (continueConversation === true) {
           // User wants to move to step 11
           session.currentStep = 11;
           updated = true;
-        //  if (typeof isSpeaking === 'boolean') {
-              // Add new cycle
-              const lastCycle = session.conversationCycles[session.conversationCycles.length - 1];
-              const cycleNumber = lastCycle ? lastCycle.cycleNumber + 1 : 1;
+        } else if (isSpeaking === true) {
+          // Add new cycle
+          const lastCycle = session.conversationCycles[session.conversationCycles.length - 1];
+          const cycleNumber = lastCycle ? lastCycle.cycleNumber + 1 : 1;
 
-              if (isSpeaking) {
+          if (isSpeaking) {
+            session.conversationCycles.push({
+              cycleNumber,
+              speaking: { content },
+            });
+          } else {
+            // Listening (reflection/response from system)
+            if (lastCycle && !lastCycle.listening.content) {
+              lastCycle.listening.content = content;
+              lastCycle.listening.timestamp = new Date();
+            } else {
+              // If no open speaking, create new cycle
               session.conversationCycles.push({
                 cycleNumber,
-                speaking: { content, timestamp: new Date() },
+                listening: { content },
               });
-              } else {
-              // Listening (reflection/response from system)
-              if (lastCycle && !lastCycle.listening.content) {
-                lastCycle.listening.content = content;
-                lastCycle.listening.timestamp = new Date();
-              } else {
-                // If no open speaking, create new cycle
-                session.conversationCycles.push({
-                cycleNumber,
-                listening: { content, timestamp: new Date() },
-                });
-              }
-              }
-              updated = true;
-            // } else {
-            //   return res.status(400).json({
-            //   success: false,
-            //   message: 'Must provide isSpeaking (boolean) + content (string) OR continueConversation: true',
-            //   });
-            // }
+            }
+          }
+          updated = true;
         } else {
           return res.status(400).json({
             success: false,
-            message: 'Must provide isSpeaking (boolean) + content (string) OR continueConversation: true',
+            message: 'Must provide isSpeaking + content OR continueConversation: true',
           });
         }
-        updated = true;
         break;
       }
 
