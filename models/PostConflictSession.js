@@ -23,11 +23,11 @@ const postConflictSessionSchema = new mongoose.Schema({
     understanding: { type: String, trim: true },
 
     // terms array: only option and description are enforced
-    // extra fields (str1, str2, etc.) are stored dynamically
+    // extra fields (reason1, str1, str2, etc.) are stored dynamically
     terms: [{
       option:      { type: String, required: true, trim: true },
       description: { type: String, required: true, trim: true },
-      // No other fields defined → MongoDB stores anything extra automatically
+      // NO other fields defined here → MongoDB stores everything extra automatically
     }],
   },
   step3: {
@@ -43,13 +43,12 @@ const postConflictSessionSchema = new mongoose.Schema({
   completedAt: { type: Date },
   lastUpdatedAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
-});
+}, { strict: false, timestamps: true });
 
-// Pre-save hook – only update lastUpdatedAt (no status logic here)
+// Pre-save hook – unchanged (only updates timestamp)
 postConflictSessionSchema.pre('save', function () {
   this.lastUpdatedAt = new Date();
-  // No next() – modern Mongoose handles it automatically
-  // Status, completedAt, conflictTime now controlled ONLY from endpoints
+  // No next() – modern Mongoose handles it
 });
 
 module.exports = mongoose.model('PostConflictSession', postConflictSessionSchema);
