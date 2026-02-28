@@ -9,7 +9,7 @@ const postConflictSessionSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['draft', 'in_progress', 'completed'],
-    default: 'draft',
+    default: 'draft',              // Default on creation
   },
   step1: {
     rating: { type: Number, min: 1, max: 10 },
@@ -29,19 +29,41 @@ const postConflictSessionSchema = new mongoose.Schema({
   conflictTime: { type: Number },
   startedAt: { type: Date, default: Date.now },
   completedAt: { type: Date },
-  lastUpdatedAt: { type: Date, default: Date.now },  // ← NEW: track last activity
+  lastUpdatedAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
 });
 
-// Pre-save hook to update status and lastUpdatedAt
-postConflictSessionSchema.pre('save', function(next) {
+// FIXED Pre-save hook
+postConflictSessionSchema.pre('save', function (next) {
   this.lastUpdatedAt = new Date();
-  if (this.step1 && this.step2 && this.step3 && this.step4) {
-    this.status = 'completed';
-  } else if (this.step1 || this.step2 || this.step3) {
-    this.status = 'in_progress';
+
+  // IMPORTANT: On NEW documents (creation), do NOT override status
+  // Respect whatever was explicitly set (or default 'draft')
+  if (this.isNew) {
+    // Optionally force 'draft' if nothing was set
+    if (!this.status) {
+      this.status = 'draft';
+    }
+    return next();
   }
-  
+
+  // On UPDATES only — check step completion
+  const hasAnyStep = this.step1 || this.step2 || this.step3;
+  const hasAllSteps = this.step1 && this.step2 && this.step3 && this.step4;
+
+  if (hasAllSteps) {
+    this.status = 'completed';
+    this.completedAt = new Date();
+
+    // Optional: calculate conflict time if not already set
+    if (this.startedAt && !this.conflictTime) {
+      this.conflictTime = Math.round((this.completedAt - this.startedAt) / (1000 * 60)); // minutes
+    }
+  } else if (hasAnyStep) {
+    this.status = 'in_progress';
+  } else {
+    this.status = 'draft';
+  }
 });
 
 module.exports = mongoose.model('PostConflictSession', postConflictSessionSchema);
