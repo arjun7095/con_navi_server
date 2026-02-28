@@ -41,7 +41,7 @@ postConflictSessionSchema.pre('save', function(next) {
   } else if (this.step1 || this.step2 || this.step3) {
     this.status = 'in_progress';
   }
-  next();
+  
 });
 
 module.exports = mongoose.model('PostConflictSession', postConflictSessionSchema);
