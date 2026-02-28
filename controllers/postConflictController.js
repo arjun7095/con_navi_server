@@ -166,29 +166,49 @@ exports.updateStep3 = async (req, res) => {
 };
 
 exports.completeSession = async (req, res) => {
-  const { sessionId } = req.params;
+  try {
+    const { sessionId } = req.params;
 
-  const session = await PostConflictSession.findById(sessionId);
-  if (!session || session.userId.toString() !== req.user.userId) return res.status(404).json({ error: 'Session not found' });
+    const session = await PostConflictSession.findById(sessionId);
+    if (!session || session.userId.toString() !== req.user.userId) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
 
-  if (!session.step1 || !session.step2 || !session.step3) return res.status(400).json({ error: 'Complete all steps first' });
+    // Ensure all steps are filled before completing
+    if (!session.step1 || !session.step2 || !session.step3 || !session.step4?.summary) {
+      return res.status(400).json({
+        success: false,
+        message: 'All steps must be completed before finalizing the session',
+      });
+    }
 
-  session.completedAt = new Date();
-  session.conflictTime = Math.round((session.completedAt - session.startedAt) / (1000 * 60));  // minutes
-  session.status = 'completed';
-  session.step4 = { summary: generateSummary(session) };  // e.g. "Your Reflection Summary: Experience: bg... etc."
-  await session.save();
+    // Mark as completed
+    session.status = 'completed';
+    session.completedAt = new Date();
 
-  // Send push notification
-  await sendPushToUser(session.userId, 'Reflection Complete', 'Great job processing your conflict! Check your summary.');
+    if (session.startedAt && !session.conflictTime) {
+      session.conflictTime = Math.round((session.completedAt - session.startedAt) / (1000 * 60));
+    }
 
-  res.json({
-    success: true,
-    session: session,
-    message: 'Session completed',
-  });
+    // Generate and save summary (if not already)
+    if (!session.step4?.summary) {
+      session.step4 = {
+        summary: generateSummary(session),
+      };
+    }
+
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Session completed successfully',
+      session,
+    });
+  } catch (error) {
+    console.error('completeSession error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
 };
-
 // Helpers
 function getDistressCategory(rating) {
   if (rating <= 3) return 'Low Distress';
@@ -204,8 +224,39 @@ function getFeedbackMessage(initial, final) {
 }
 
 function generateSummary(session) {
-  // Simple template – or integrate AI later
-  return `Your Reflection Summary:\nExperience: ${session.step2.reflections[0]}\nYour Response: ${session.step2.reflections[1]}\nUnderstanding Gained: ${session.step2.reflections[2]}\nUnderstanding the Exchange: ${session.step2.reflections[3]}\n...`;  // expand for all 6
+  if (!session.step2) {
+    return 'Reflection summary not available yet – complete Step 2 first.';
+  }
+
+  const { experience, react, assumption, thoughts, understanding, terms = [] } = session.step2;
+
+  let summary = 'Your Reflection Summary:\n\n';
+
+  summary += `Experience:\n${experience || 'Not provided'}\n\n`;
+  summary += `Your Reaction:\n${react || 'Not provided'}\n\n`;
+  summary += `Assumptions Made:\n${assumption || 'Not provided'}\n\n`;
+  summary += `Thoughts During Conflict:\n${thoughts || 'Not provided'}\n\n`;
+  summary += `Understanding Gained:\n${understanding || 'Not provided'}\n\n`;
+
+  if (terms.length > 0) {
+    summary += 'Key Terms / Needs Identified:\n';
+    terms.forEach((term, index) => {
+      summary += `\nTerm ${index + 1}:\n`;
+      summary += `  Option: ${term.option || 'N/A'}\n`;
+      summary += `  Description: ${term.description || 'N/A'}\n`;
+
+      // Dynamically add any extra fields (str1, str2, note, etc.)
+      Object.entries(term)
+        .filter(([key]) => !['option', 'description'].includes(key))
+        .forEach(([key, value]) => {
+          summary += `  ${key}: ${value || 'N/A'}\n`;
+        });
+    });
+  } else {
+    summary += 'No terms/needs identified in this reflection.\n';
+  }
+
+  return summary.trim();
 }
 
 // Updated getSessions (history list)
