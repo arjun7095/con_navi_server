@@ -6,26 +6,15 @@ const LiveConflictSession = require('../models/LiveConflictSession');
 // ──────────────────────────────────────────────────────────────
 exports.getProfileById = async (req, res) => {
   try {
-    const requestedUserId = req.params.userId;
-    const currentUserId = req.user.userId; // from protect middleware 
-
-    // Optional: only allow fetching own profile (or admin)
-    // if (requestedUserId !== currentUserId && req.user.role !== 'admin') {
-    //   return res.status(403).json({ success: false, message: "Not authorized to view this profile" });
-    // }
-
-    const user = await User.findById(requestedUserId).select(
-      '-refreshToken -otp -otpExpires -__v' // exclude sensitive fields
+    const user = await User.findById(req.user.userId).select(
+      '-refreshToken -__v -otp -otpExpires'
     );
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    return res.json({
+    res.json({
       success: true,
       profile: {
         userId: user._id.toString(),
@@ -39,13 +28,10 @@ exports.getProfileById = async (req, res) => {
         notificationPreference: user.notificationPreference,
         dataAnalyticsEnabled: user.dataAnalyticsEnabled,
         isProfileComplete: user.isProfileComplete,
-        createdAt: user.createdAt,
-        lastLogin: user.lastLogin
-      }
+      },
     });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 

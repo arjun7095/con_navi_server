@@ -10,7 +10,7 @@ const {
 } = require('../controllers/profileController');   // new controller or put in authController/userController
 
 // ── GET profile by userId ─────────────────────────────────────
-router.get('/:userId', protect, getProfileById);
+router.get('/', protect, getProfileById);
 
 // ── UPDATE profile by userId ──────────────────────────────────
 router.put('/:userId', protect, updateProfileById);
