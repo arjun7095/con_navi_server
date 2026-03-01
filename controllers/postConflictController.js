@@ -313,26 +313,47 @@ function getNextStep(session) {
   return null;  // completed
 }
 
-exports.getAllPostConflictSessions = async (req, res) => {
+// exports.getAllPostConflictSessions = async (req, res) => {
+//   try {
+//     const sessions = await PostConflictSession.find({ userId: req.user.userId })
+//       .sort({ createdAt: -1 })  // newest first
+//       .lean();  // faster, returns plain JS objects
+
+//     const enhancedSessions = sessions.map(session => ({
+//       ...session,
+//       resumable: session.status !== 'completed',
+//       nextStep: getNextStep(session),  // reuse your helper if you have it
+//       durationMinutes: session.conflictTime || null,
+//     }));
+
+//     res.json({
+//       success: true,
+//       total: enhancedSessions.length,
+//       sessions: enhancedSessions,
+//     });
+//   } catch (error) {
+//     console.error('getAllPostConflictSessions error:', error);
+//     res.status(500).json({ success: false, message: 'Server error' });
+//   }
+// };
+
+
+exports.getUserSessions = async (req, res) => {
   try {
     const sessions = await PostConflictSession.find({ userId: req.user.userId })
-      .sort({ createdAt: -1 })  // newest first
-      .lean();  // faster, returns plain JS objects
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const enhancedSessions = sessions.map(session => ({
-      ...session,
-      resumable: session.status !== 'completed',
-      nextStep: getNextStep(session),  // reuse your helper if you have it
-      durationMinutes: session.conflictTime || null,
+    const enhanced = sessions.map(s => ({
+      ...s,
+      resumable: s.status === 'paused' || s.status === 'active',
     }));
 
     res.json({
       success: true,
-      total: enhancedSessions.length,
-      sessions: enhancedSessions,
+      sessions: enhanced,
     });
   } catch (error) {
-    console.error('getAllPostConflictSessions error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };

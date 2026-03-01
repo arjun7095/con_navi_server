@@ -37,6 +37,6 @@ router.get('/:sessionId', getSession);
 // Manually complete (step 12 or admin force)
 router.put('/:sessionId/complete', completeSession);
 //Get all live conflict sessions for user (summary list)
-router.get('/sessions', getAllLiveConflictSessions);
+// router.get('/sessions', getAllLiveConflictSessions);
 
 module.exports = router;    
