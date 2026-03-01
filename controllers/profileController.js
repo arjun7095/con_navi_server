@@ -6,7 +6,7 @@ const User = require('../models/User');
 exports.getProfileById = async (req, res) => {
   try {
     const requestedUserId = req.params.userId;
-    const currentUserId = req.user.userId; // from protect middleware
+    const currentUserId = req.user.userId; // from protect middleware 
 
     // Optional: only allow fetching own profile (or admin)
     // if (requestedUserId !== currentUserId && req.user.role !== 'admin') {
@@ -55,19 +55,24 @@ exports.updateProfileById = async (req, res) => {
   try {
     const requestedUserId = req.params.userId;
     const currentUserId = req.user.userId;
+    const isAdmin = req.user.role === 'admin';
 
     // Security: only allow updating own profile (or admin)
-    if (requestedUserId !== currentUserId && req.user.role !== 'admin') {
+    if (requestedUserId !== currentUserId && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: 'You can only update your own profile'
+        message: 'You can only update your own profile',
       });
     }
 
     const allowedFields = [
-      'name', 'email', 'avatar', 'profileImageUrl',
-      'notificationPreference', 'dataAnalyticsEnabled'
-      // add more if needed: ageGroup, gender, etc.
+      'name',
+      'email',
+      'avatar',                // base64 image
+      'profileImageUrl',       // base64 or URL
+      'notificationPreference',
+      'dataAnalyticsEnabled',
+      // Add more fields if needed: ageGroup, gender, etc.
     ];
 
     const updates = {};
@@ -77,33 +82,67 @@ exports.updateProfileById = async (req, res) => {
       }
     });
 
-    // Optional validation examples
-    if (updates.notificationPreference &&
-        !['all', 'important', 'none'].includes(updates.notificationPreference)) {
-      return res.status(400).json({ success: false, message: 'Invalid notification preference' });
+    // Validate allowed enum fields
+    if (
+      updates.notificationPreference &&
+      !['all', 'important', 'none'].includes(updates.notificationPreference)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid notification preference value',
+      });
     }
 
+    // Optional: Basic base64 validation for images
+    const validateBase64 = (base64String) => {
+      if (typeof base64String !== 'string') return false;
+      // Remove data:image/...;base64, prefix if present
+      const cleanBase64 = base64String.replace(/^data:image\/[a-z]+;base64,/, '');
+      // Check if it's valid base64 (simple regex + length)
+      return /^[A-Za-z0-9+/=]+$/.test(cleanBase64) && cleanBase64.length > 20; // min length to avoid junk
+    };
+
+    if (updates.avatar && !validateBase64(updates.avatar)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid base64 format for avatar',
+      });
+    }
+
+    if (updates.profileImageUrl && !validateBase64(updates.profileImageUrl)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid base64 format for profileImageUrl',
+      });
+    }
+
+    // Perform the update using modern MongoDB option
     const updatedUser = await User.findByIdAndUpdate(
       requestedUserId,
       { $set: updates },
-      { new: true, runValidators: true }
-    ).select('-refreshToken -__v');
+      {
+        returnDocument: 'after',     // ← modern replacement for { new: true }
+        runValidators: true,
+        new: false,                  // we use returnDocument instead
+      }
+    ).select('-refreshToken -__v -otp -otpExpires'); // exclude sensitive fields
 
     if (!updatedUser) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Optional: re-evaluate profile completeness
+    // Optional: Re-evaluate profile completeness (if you still want it)
     if (!updatedUser.isProfileComplete) {
       updatedUser.isProfileComplete = !!(
         updatedUser.name &&
         updatedUser.email &&
-        updatedUser.profileImageUrl &&
+        (updatedUser.avatar || updatedUser.profileImageUrl) &&
         updatedUser.notificationPreference
       );
-      await updatedUser.save();
+      await updatedUser.save({ validateBeforeSave: false }); // skip full validation if needed
     }
 
+    // Prepare clean response
     return res.json({
       success: true,
       message: 'Profile updated successfully',
@@ -118,15 +157,30 @@ exports.updateProfileById = async (req, res) => {
         profileImageUrl: updatedUser.profileImageUrl,
         notificationPreference: updatedUser.notificationPreference,
         dataAnalyticsEnabled: updatedUser.dataAnalyticsEnabled,
-        isProfileComplete: updatedUser.isProfileComplete
-      }
+        isProfileComplete: updatedUser.isProfileComplete,
+      },
     });
   } catch (err) {
-    console.error(err);
+    console.error('updateProfileById error:', err);
+
     if (err.code === 11000) {
-      return res.status(409).json({ success: false, message: 'Duplicate value (email?)' });
+      return res.status(409).json({
+        success: false,
+        message: 'Duplicate value detected (likely email)',
+      });
     }
-    return res.status(500).json({ success: false, message: 'Server error' });
+
+    if (err.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format',
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while updating profile',
+    });
   }
 };
 
