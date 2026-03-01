@@ -6,7 +6,8 @@ const {
   getProfileById,
   updateProfileById,
   deleteProfileById,
-  getConflictStats
+  getConflictStats,
+  getTrendsAnalytics
 } = require('../controllers/profileController');   // new controller or put in authController/userController
 
 // ── GET profile by userId ─────────────────────────────────────
@@ -18,5 +19,6 @@ router.put('/:userId', protect, updateProfileById);
 // ── DELETE profile (self-delete) ──────────────────────────────
 router.delete('/:userId', protect, deleteProfileById);
 router.get('/stats', protect, getConflictStats);
+router.get('/trends', protect, getTrendsAnalytics);
 
 module.exports = router;

@@ -308,3 +308,122 @@ exports.getConflictStats = async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error while fetching stats' });
   }
 };
+
+
+exports.getTrendsAnalytics = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const type = req.query.type || 'distress'; // e.g. 'distress', 'duration', etc.
+    const period = req.query.period || 'weekly'; // weekly, monthly, yearly
+
+    // Helper: Generate date grouping based on period
+    const getDateGrouping = (period) => {
+      if (period === 'monthly') return { $dateToString: { format: "%Y-%m", date: "$createdAt" } };
+      if (period === 'yearly') return { $dateToString: { format: "%Y", date: "$createdAt" } };
+      // Default: weekly
+      return { $dateToString: { format: "%Y-%U", date: "$createdAt" } };
+    };
+
+    // 1. Post-conflict trends
+    const postTrends = await PostConflictSession.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          status: 'completed',
+          conflictTime: { $exists: true, $ne: null } // or initialDistress.rating if using distress
+        }
+      },
+      {
+        $group: {
+          _id: getDateGrouping(period),
+          averageValue: { $avg: type === 'distress' ? '$initialDistress.rating' : '$conflictTime' },
+          count: { $sum: 1 },
+          minDate: { $min: '$createdAt' },
+          maxDate: { $max: '$createdAt' }
+        }
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          period: '$_id',
+          average: { $round: ['$averageValue', 1] },
+          count: 1,
+          dateRange: { $concat: [{ $dateToString: { format: "%Y-%m-%d", date: "$minDate" } }, " to ", { $dateToString: { format: "%Y-%m-%d", date: "$maxDate" } }] }
+        }
+      }
+    ]);
+
+    // 2. Live-conflict trends
+    const liveTrends = await LiveConflictSession.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          status: 'completed',
+          totalDurationMinutes: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: getDateGrouping(period),
+          averageValue: { $avg: type === 'distress' ? '$finalDistress.rating' : '$totalDurationMinutes' },
+          count: { $sum: 1 },
+          minDate: { $min: '$createdAt' },
+          maxDate: { $max: '$createdAt' }
+        }
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          period: '$_id',
+          average: { $round: ['$averageValue', 1] },
+          count: 1,
+          dateRange: { $concat: [{ $dateToString: { format: "%Y-%m-%d", date: "$minDate" } }, " to ", { $dateToString: { format: "%Y-%m-%d", date: "$maxDate" } }] }
+        }
+      }
+    ]);
+
+    // Combine all trends for overall view
+    const allTrends = [...postTrends, ...liveTrends].sort((a, b) => a.period.localeCompare(b.period));
+
+    // Calculate overall averages
+    const calculateOverallAverage = (trends) => {
+      if (trends.length === 0) return 0;
+      const sum = trends.reduce((acc, t) => acc + t.average, 0);
+      return Math.round((sum / trends.length) * 10) / 10;
+    };
+
+    res.json({
+      success: true,
+      query: {
+        userId,
+        type,
+        period,
+        totalPostTrends: postTrends.length,
+        totalLiveTrends: liveTrends.length,
+        totalTrends: allTrends.length
+      },
+      post: {
+        count: postTrends.length,
+        average: calculateOverallAverage(postTrends),
+        data: postTrends
+      },
+      live: {
+        count: liveTrends.length,
+        average: calculateOverallAverage(liveTrends),
+        data: liveTrends
+      },
+      combined: {
+        count: allTrends.length,
+        average: calculateOverallAverage(allTrends),
+        data: allTrends
+      }
+    });
+  } catch (error) {
+    console.error('getTrendsAnalytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch trends analytics',
+      error: error.message
+    });
+  }
+};
