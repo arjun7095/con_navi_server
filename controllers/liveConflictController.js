@@ -275,16 +275,17 @@ case 8: {
   // Mark speaking complete
   currentCycle.isSpeakingComplete = true;
 
-  // If listening already done → cycle complete
+  // Check if cycle is now complete
   if (currentCycle.isListeningComplete) {
     currentCycle.completed = true;
-    session.currentStep = 10; // Move to resolution step
+    session.currentStep = 10;  // Go to decision step
+  } else {
+    // Not complete yet → back to step 7 for listening
+    session.currentStep = 7;
+    currentCycle.selection = 'listening';  // Switch selection
   }
 
-  // Back to step 7 (now for listening)
-  session.currentStep = 7;
   updated = true;
-  session.conversationCycles[session.conversationCycles.length - 1].selection = 'listening';
   break;
 }
 
@@ -314,14 +315,16 @@ case 9: {
   // Mark listening complete
   currentCycle.isListeningComplete = true;
 
-  // If speaking already done → cycle complete
+  // Check if cycle is now complete
   if (currentCycle.isSpeakingComplete) {
     currentCycle.completed = true;
-    session.currentStep = 10; // Move to resolution step
+    session.currentStep = 10;  // Go to decision step
+  } else {
+    // Not complete yet → back to step 7 for speaking
+    session.currentStep = 7;
+    currentCycle.selection = 'speaking';  // Switch selection
   }
 
-  session.currentStep = 7;
-  session.conversationCycles[session.conversationCycles.length - 1].selection = 'speaking';
   updated = true;
   break;
 }
