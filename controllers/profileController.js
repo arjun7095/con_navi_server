@@ -1,5 +1,6 @@
 const User = require('../models/User');
-
+const PostConflictSession = require('../models/PostConflictSession');
+const LiveConflictSession = require('../models/LiveConflictSession');
 // ──────────────────────────────────────────────────────────────
 // GET /api/profile/:userId
 // ──────────────────────────────────────────────────────────────
@@ -224,5 +225,99 @@ exports.deleteProfileById = async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+
+
+exports.getConflictStats = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // 1. Total Post Conflicts (any status)
+    const totalPost = await PostConflictSession.countDocuments({ userId });
+
+    // 2. Total Live Conflicts (any status)
+    const totalLive = await LiveConflictSession.countDocuments({ userId });
+
+    // Combined total
+    const totalConflicts = totalPost + totalLive;
+
+    // 3. Average time for completed Post Conflicts (using conflictTime field)
+    const postCompletedAvg = await PostConflictSession.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          status: 'completed',
+          conflictTime: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          average: { $avg: '$conflictTime' }
+        }
+      }
+    ]);
+
+    const avgPostTime = postCompletedAvg.length > 0 ? Math.round(postCompletedAvg[0].average) : 0;
+
+    // 4. Average time for completed Live Conflicts (using totalDurationMinutes)
+    const liveCompletedAvg = await LiveConflictSession.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          status: 'completed',
+          totalDurationMinutes: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          average: { $avg: '$totalDurationMinutes' }
+        }
+      }
+    ]);
+
+    const avgLiveTime = liveCompletedAvg.length > 0 ? Math.round(liveCompletedAvg[0].average) : 0;
+
+    // Combined average time (weighted by number of completed sessions)
+    const totalCompleted = avgPostTime > 0 ? 1 : 0 + avgLiveTime > 0 ? 1 : 0;
+    const combinedAvgTime = totalCompleted > 0
+      ? Math.round((avgPostTime + avgLiveTime) / totalCompleted)
+      : 0;
+
+    // 5. Number of unique common patterns across both (assuming field 'commonPatterns' is an array of strings in both models)
+    const postPatterns = await PostConflictSession.distinct('commonPatterns', {
+      userId: new mongoose.Types.ObjectId(userId),
+      status: 'completed',
+      commonPatterns: { $exists: true }
+    });
+
+    const livePatterns = await LiveConflictSession.distinct('commonPatterns', {
+      userId: new mongoose.Types.ObjectId(userId),
+      status: 'completed',
+      commonPatterns: { $exists: true }
+    });
+
+    // Combine and get unique count
+    const allPatterns = [...new Set([...postPatterns, ...livePatterns])];
+    const uniqueCommonPatternsCount = allPatterns.length;
+
+    res.json({
+      success: true,
+      stats: {
+        totalConflicts,
+        totalPostConflicts: totalPost,
+        totalLiveConflicts: totalLive,
+        averageTimeMinutes: combinedAvgTime,
+        averagePostTimeMinutes: avgPostTime,
+        averageLiveTimeMinutes: avgLiveTime,
+        uniqueCommonPatternsCount
+      }
+    });
+  } catch (error) {
+    console.error('getConflictStats error:', error);
+    res.status(500).json({ success: false, message: 'Server error while fetching stats' });
   }
 };

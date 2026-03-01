@@ -5,7 +5,8 @@ const protect = require('../middleware/auth');
 const {
   getProfileById,
   updateProfileById,
-  deleteProfileById
+  deleteProfileById,
+  getConflictStats
 } = require('../controllers/profileController');   // new controller or put in authController/userController
 
 // ── GET profile by userId ─────────────────────────────────────
@@ -16,5 +17,6 @@ router.put('/:userId', protect, updateProfileById);
 
 // ── DELETE profile (self-delete) ──────────────────────────────
 router.delete('/:userId', protect, deleteProfileById);
+router.get('/stats', protect, getConflictStats);
 
 module.exports = router;
