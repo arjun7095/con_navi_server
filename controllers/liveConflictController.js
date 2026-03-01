@@ -167,42 +167,49 @@ exports.updateStep = async (req, res) => {
       case 8:
       case 9:
       case 10: {
-        // Conversation cycle (speaking/listening)
-        const { isSpeaking, continueConversation } = req.body;
-        const content='none';
+        const { isSpeaking, experience, assumptions, checkboxSelected, communicated, continueConversation } = req.body;
+
+        let currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+
+        if (!currentCycle) {
+          // Start new cycle if none exists
+          currentCycle = {
+            cycleNumber: session.conversationCycles.length + 1,
+            speaking: {},
+            listening: {},
+          };
+          session.conversationCycles.push(currentCycle);
+        }
+
         if (continueConversation === true) {
-          // User wants to move to step 11
+          if (!currentCycle.speaking.content || !currentCycle.listening.communicated) {
+            return res.status(400).json({ success: false, message: 'Complete both speaking and listening in the current cycle first' });
+          }
+          currentCycle.completed = true;
           session.currentStep = 11;
           updated = true;
-        } else if (isSpeaking === true || isSpeaking === false) {
-          // Add new cycle
-          const lastCycle = session.conversationCycles[session.conversationCycles.length - 1];
-          const cycleNumber = lastCycle ? lastCycle.cycleNumber + 1 : 1;
-
-          if (isSpeaking) {
-            session.conversationCycles.push({
-              cycleNumber,
-              speaking: { content },
-            });
-          } else {
-            // Listening (reflection/response from system)
-            if (lastCycle && !lastCycle.listening.content) {
-              lastCycle.listening.content = content;
-              lastCycle.listening.timestamp = new Date();
-            } else {
-              // If no open speaking, create new cycle
-              session.conversationCycles.push({
-                cycleNumber,
-                listening: { content },
-              });
-            }
-          }
+        } else if (isSpeaking) {
+          // Speaking update (step 8)
+          currentCycle.speaking = {
+            experience: experience?.trim(),
+            assumptions: assumptions?.trim(),
+            checkboxSelected: !!checkboxSelected,
+            structuredStatements: checkboxSelected ? generateStructuredStatements(experience, { 
+              presentFeelings: session.presentFeelings, 
+              desiredFeelings: session.desiredFeelings 
+            }) : [],
+            timestamp: new Date(),
+          };
+          updated = true;
+        } else if (communicated) {
+          // Listening update (step 9)
+          currentCycle.listening = {
+            communicated: communicated.trim(),
+            timestamp: new Date(),
+          };
           updated = true;
         } else {
-          return res.status(400).json({
-            success: false,
-            message: 'Must provide isSpeaking + content OR continueConversation: true',
-          });
+          return res.status(400).json({ success: false, message: 'Provide isSpeaking + data OR communicated OR continueConversation' });
         }
         break;
       }

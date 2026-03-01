@@ -45,17 +45,26 @@ const liveConflictSchema = new mongoose.Schema({
   // Step 5
   nonNegotiablesAgreed: { type: Boolean, default: false },
 
-  // Steps 6–10: Conversation cycles (speaking + listening pairs)
+  // Steps 6–10: Conversation cycles (updated structure)
   conversationCycles: [{
     cycleNumber: { type: Number, required: true },
+    
+    // Speaking part (steps 7-8)
     speaking: {
-      content: { type: String, trim: true },
+      experience: { type: String, trim: true },              // "What was your experience?"
+      assumptions: { type: String, trim: true },             // "What assumptions might you be making?"
+      helpStructureSelected: { type: Boolean, default: false },  // Checkbox: "I would like help in structuring..."
+      structuredStatements: [{ type: String }],              // Generated 4 strings when checkbox true
       timestamp: { type: Date, default: Date.now },
     },
+
+    // Listening part (step 9)
     listening: {
-      content: { type: String, trim: true },
+      communicated: { type: String, trim: true },            // "What did the other person communicate to you?"
       timestamp: { type: Date, default: Date.now },
     },
+
+    completed: { type: Boolean, default: false },            // true only when both speaking & listening are filled
   }],
 
   // Step 11
