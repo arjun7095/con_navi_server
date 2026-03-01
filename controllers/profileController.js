@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const PostConflictSession = require('../models/PostConflictSession');
 const LiveConflictSession = require('../models/LiveConflictSession');
+const mongoose = require('mongoose');
 // ──────────────────────────────────────────────────────────────
 // GET /api/profile/:userId
 // ──────────────────────────────────────────────────────────────
