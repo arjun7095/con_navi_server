@@ -18,6 +18,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/post-conflicts', require('./routes/postConflictRoutes'));
 app.use('/api/live-conflicts', require('./routes/liveConflictRoutes'));
+app.use('/api/profiles', require('./routes/profileRoutes'));
 
 // Root route (optional)
 app.get('/', (req, res) => res.send('Backend Running'));
