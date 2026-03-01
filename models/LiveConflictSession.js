@@ -50,26 +50,21 @@ const liveConflictSchema = new mongoose.Schema({
     cycleNumber: { type: Number, required: true },
 
     speaking: {
-      experience: { type: String, trim: true },                    // "What was your experience?"
-      assumptions: { type: String, trim: true },                   // "What assumptions might you be making?"
-      helpStructureSelected: { type: Boolean, default: false },    // Checkbox in step 8
-
-      // NEW: these two come directly from payload when checkbox is true
-      when: { type: String, trim: true },                          // "When..." string
-      request: { type: String, trim: true },                       // "Would you be willing to..." / request string
-
-      // Generated result (stored for display/summary)
-      structuredStatements: [{ type: String }],
-
+      experience: { type: String, trim: true },
+      assumptions: { type: String, trim: true },
+      helpStructureSelected: { type: Boolean, default: false },
+      when: { type: String, trim: true },                    // from payload when checkbox true
+      request: { type: String, trim: true },                 // from payload when checkbox true
+      structuredStatements: [{ type: String }],              // generated when checkbox true
       timestamp: { type: Date, default: Date.now },
     },
 
     listening: {
-      communicated: { type: String, trim: true },                  // "What did the other person communicate to you?"
+      communicated: { type: String, trim: true },
       timestamp: { type: Date, default: Date.now },
     },
 
-    completed: { type: Boolean, default: false },                  // true only after both speaking & listening are filled
+    completed: { type: Boolean, default: false },
   }],
 
   // Step 11
