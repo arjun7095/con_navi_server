@@ -312,117 +312,93 @@ exports.getConflictStats = async (req, res) => {
 
 exports.getTrendsAnalytics = async (req, res) => {
   try {
-    const userId = req.user.userId;
-    const type = req.query.type || 'distress'; // e.g. 'distress', 'duration', etc.
-    const period = req.query.period || 'weekly'; // weekly, monthly, yearly
+    const userId = new mongoose.Types.ObjectId(req.user.userId);
 
-    // Helper: Generate date grouping based on period
-    const getDateGrouping = (period) => {
-      if (period === 'monthly') return { $dateToString: { format: "%Y-%m", date: "$createdAt" } };
-      if (period === 'yearly') return { $dateToString: { format: "%Y", date: "$createdAt" } };
-      // Default: weekly
-      return { $dateToString: { format: "%Y-%U", date: "$createdAt" } };
-    };
+    // ── 1. Completed sessions counts ─────────────────────────────────────────
+    const postCount = await PostConflictSession.countDocuments({
+      userId,
+      status: 'completed'
+    });
 
-    // 1. Post-conflict trends
-    const postTrends = await PostConflictSession.aggregate([
-      {
-        $match: {
-          userId: new mongoose.Types.ObjectId(userId),
-          status: 'completed',
-          conflictTime: { $exists: true, $ne: null } // or initialDistress.rating if using distress
-        }
-      },
-      {
-        $group: {
-          _id: getDateGrouping(period),
-          averageValue: { $avg: type === 'distress' ? '$initialDistress.rating' : '$conflictTime' },
-          count: { $sum: 1 },
-          minDate: { $min: '$createdAt' },
-          maxDate: { $max: '$createdAt' }
-        }
-      },
-      { $sort: { _id: 1 } },
-      {
-        $project: {
-          period: '$_id',
-          average: { $round: ['$averageValue', 1] },
-          count: 1,
-          dateRange: { $concat: [{ $dateToString: { format: "%Y-%m-%d", date: "$minDate" } }, " to ", { $dateToString: { format: "%Y-%m-%d", date: "$maxDate" } }] }
-        }
-      }
+    const liveCount = await LiveConflictSession.countDocuments({
+      userId,
+      status: 'completed'
+    });
+
+    // ── 2. Most Common Feelings (from post + live completed sessions) ────────
+    const postFeelings = await PostConflictSession.aggregate([
+      { $match: { userId, status: 'completed' } },
+      { $unwind: '$presentFeelings' },
+      { $group: { _id: '$presentFeelings', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
     ]);
 
-    // 2. Live-conflict trends
-    const liveTrends = await LiveConflictSession.aggregate([
-      {
-        $match: {
-          userId: new mongoose.Types.ObjectId(userId),
-          status: 'completed',
-          totalDurationMinutes: { $exists: true, $ne: null }
-        }
-      },
-      {
-        $group: {
-          _id: getDateGrouping(period),
-          averageValue: { $avg: type === 'distress' ? '$finalDistress.rating' : '$totalDurationMinutes' },
-          count: { $sum: 1 },
-          minDate: { $min: '$createdAt' },
-          maxDate: { $max: '$createdAt' }
-        }
-      },
-      { $sort: { _id: 1 } },
-      {
-        $project: {
-          period: '$_id',
-          average: { $round: ['$averageValue', 1] },
-          count: 1,
-          dateRange: { $concat: [{ $dateToString: { format: "%Y-%m-%d", date: "$minDate" } }, " to ", { $dateToString: { format: "%Y-%m-%d", date: "$maxDate" } }] }
-        }
-      }
+    const liveFeelings = await LiveConflictSession.aggregate([
+      { $match: { userId, status: 'completed' } },
+      { $unwind: '$presentFeelings' },
+      { $group: { _id: '$presentFeelings', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
     ]);
 
-    // Combine all trends for overall view
-    const allTrends = [...postTrends, ...liveTrends].sort((a, b) => a.period.localeCompare(b.period));
+    // Merge and get top feelings with total count
+    const feelingMap = new Map();
+    [...postFeelings, ...liveFeelings].forEach(f => {
+      const key = f._id;
+      feelingMap.set(key, (feelingMap.get(key) || 0) + f.count);
+    });
 
-    // Calculate overall averages
-    const calculateOverallAverage = (trends) => {
-      if (trends.length === 0) return 0;
-      const sum = trends.reduce((acc, t) => acc + t.average, 0);
-      return Math.round((sum / trends.length) * 10) / 10;
-    };
+    const mostCommonFeelings = Array.from(feelingMap.entries())
+      .map(([feeling, count]) => ({ feeling, times: count }))
+      .sort((a, b) => b.times - a.times)
+      .slice(0, 10); // top 10
 
+    // ── 3. Most Common Needs ─────────────────────────────────────────────────
+    const postNeeds = await PostConflictSession.aggregate([
+      { $match: { userId, status: 'completed' } },
+      { $unwind: '$desiredFeelings' },
+      { $group: { _id: '$desiredFeelings', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+
+    const liveNeeds = await LiveConflictSession.aggregate([
+      { $match: { userId, status: 'completed' } },
+      { $unwind: '$desiredFeelings' },
+      { $group: { _id: '$desiredFeelings', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+
+    const needMap = new Map();
+    [...postNeeds, ...liveNeeds].forEach(n => {
+      const key = n._id;
+      needMap.set(key, (needMap.get(key) || 0) + n.count);
+    });
+
+    const mostCommonNeeds = Array.from(needMap.entries())
+      .map(([need, count]) => ({ need, times: count }))
+      .sort((a, b) => b.times - a.times)
+      .slice(0, 10);
+
+    // ── 4. Final response in the exact UI-like structure ─────────────────────
     res.json({
       success: true,
-      query: {
-        userId,
-        type,
-        period,
-        totalPostTrends: postTrends.length,
-        totalLiveTrends: liveTrends.length,
-        totalTrends: allTrends.length
-      },
-      post: {
-        count: postTrends.length,
-        average: calculateOverallAverage(postTrends),
-        data: postTrends
-      },
-      live: {
-        count: liveTrends.length,
-        average: calculateOverallAverage(liveTrends),
-        data: liveTrends
-      },
-      combined: {
-        count: allTrends.length,
-        average: calculateOverallAverage(allTrends),
-        data: allTrends
+      data: {
+        mostCommonFeelings,
+        mostCommonNeeds,
+        conflictTypes: {
+          liveConflicts: liveCount,
+          postReflections: postCount
+        }
       }
     });
   } catch (error) {
     console.error('getTrendsAnalytics error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch trends analytics',
+      message: 'Failed to fetch conflict trends',
       error: error.message
     });
   }
