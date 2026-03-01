@@ -47,25 +47,32 @@ const liveConflictSchema = new mongoose.Schema({
 
   // Steps 6–10: Conversation cycles (updated structure)
   conversationCycles: [{
-    cycleNumber: { type: Number, required: true },
+  cycleNumber: { type: Number, required: true },
+  
+  // Which path was chosen for this cycle
+  selection: { 
+    type: String, 
+    enum: ['speaking', 'listening', null], 
+    default: null 
+  },
 
-    speaking: {
-      experience: { type: String, trim: true },
-      assumptions: { type: String, trim: true },
-      helpStructureSelected: { type: Boolean, default: false },
-      when: { type: String, trim: true },                    // from payload when checkbox true
-      request: { type: String, trim: true },                 // from payload when checkbox true
-      structuredStatements: [{ type: String }],              // generated when checkbox true
-      timestamp: { type: Date, default: Date.now },
-    },
+  speaking: {
+    experience: { type: String, trim: true },
+    assumptions: { type: String, trim: true },
+    helpStructureSelected: { type: Boolean, default: false },
+    when: { type: String, trim: true },
+    request: { type: String, trim: true },
+    structuredStatements: [{ type: String }],
+    timestamp: { type: Date, default: Date.now },
+  },
 
-    listening: {
-      communicated: { type: String, trim: true },
-      timestamp: { type: Date, default: Date.now },
-    },
+  listening: {
+    communicated: { type: String, trim: true },
+    timestamp: { type: Date, default: Date.now },
+  },
 
-    completed: { type: Boolean, default: false },
-  }],
+  completed: { type: Boolean, default: false },
+}],
 
   // Step 11
   finalDistress: {

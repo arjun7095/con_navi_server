@@ -94,6 +94,7 @@ exports.updateStep = async (req, res) => {
           rating,
           category: getDistressCategory(rating),
         };
+        // session.currentStep = 2;
         updated = true;
         break;
       }
@@ -104,6 +105,7 @@ exports.updateStep = async (req, res) => {
           return res.status(400).json({ success: false, message: 'doBreathing must be boolean' });
         }
         session.isBreathingExercise = doBreathing;
+        // session.currentStep = 3;
         updated = true;
         break;
       }
@@ -115,6 +117,7 @@ exports.updateStep = async (req, res) => {
         }
         session.presentFeelings = presentFeelings;
         session.desiredFeelings = desiredFeelings;
+        session.currentStep = 4;
         updated = true;
         break;
       }
@@ -124,6 +127,7 @@ exports.updateStep = async (req, res) => {
 
   if (cont === true) {
     // Continue to step 5
+    session.currentStep = 5;
     updated = true;
   } else if (brk === true) {
     session.choseToBreak = true;
@@ -158,118 +162,182 @@ exports.updateStep = async (req, res) => {
           return res.status(400).json({ success: false, message: 'agreed must be boolean' });
         }
         session.nonNegotiablesAgreed = agreed;
+        session.currentStep = 6;
         updated = true;
         break;
       }
 
-      case 6:
-case 6:
-      case 7:
-      case 8:
-      case 9:
-      case 10: {
-        const {
-          action,                     // "select-speaking" or "select-listening"
-          experience,
-          assumptions,
-          helpStructureSelected,
-          when,
-          request,
-          communicated,
-          continueConversation,
-        } = req.body;
+      case 6: {
+  const { selection } = req.body;  // "speaking" or "listening"
 
-        // Reset unfinished cycle if user returned to step 6
-        if (step === 6) {
-          const lastCycle = session.conversationCycles[session.conversationCycles.length - 1];
-          if (lastCycle && !lastCycle.completed) {
-            lastCycle.speaking = {};
-            lastCycle.listening = {};
-            lastCycle.completed = false;
-            console.log(`Cycle ${lastCycle.cycleNumber} reset – user returned to step 6`);
-          }
-          session.currentStep = 6;
-          updated = true;
-        }
+  if (!['speaking', 'listening'].includes(selection)) {
+    return res.status(400).json({
+      success: false,
+      message: 'selection must be "speaking" or "listening"',
+    });
+  }
 
-        // Find or create current cycle
-        let currentCycle = session.conversationCycles.find(c => !c.completed);
-        if (!currentCycle) {
-          currentCycle = {
-            cycleNumber: session.conversationCycles.length + 1,
-            speaking: {},
-            listening: {},
-            completed: false,
-          };
-          session.conversationCycles.push(currentCycle);
-        }
+  // Reset unfinished cycle if returning to step 6
+  const lastCycle = session.conversationCycles[session.conversationCycles.length - 1];
+  if (lastCycle && !lastCycle.completed) {
+    lastCycle.speaking = {};
+    lastCycle.listening = {};
+    lastCycle.selection = null;
+    lastCycle.completed = false;
+    console.log(`Cycle ${lastCycle.cycleNumber} reset – returned to step 6`);
+  }
 
-        if (action === 'select-speaking') {
-          session.currentStep = 7;
-          updated = true;
-        } else if (step === 7) {
-          // Static instructions – advance
-          session.currentStep = 8;
-          updated = true;
-        } else if (step === 8) {
-          if (experience) currentCycle.speaking.experience = experience.trim();
-          if (assumptions) currentCycle.speaking.assumptions = assumptions.trim();
-          currentCycle.speaking.helpStructureSelected = !!helpStructureSelected;
+  // Always move to step 7, but remember selection
+  session.currentStep = 7;
 
-          if (helpStructureSelected) {
-            if (!when || !request) {
-              return res.status(400).json({
-                success: false,
-                message: '"when" and "request" required when helpStructureSelected is true',
-              });
-            }
-            currentCycle.speaking.when = when.trim();
-            currentCycle.speaking.request = request.trim();
+  // If new cycle needed, create it
+  if (!lastCycle || lastCycle.completed) {
+    const newCycle = {
+      cycleNumber: session.conversationCycles.length + 1,
+      selection,
+      speaking: {},
+      listening: {},
+      completed: false,
+    };
+    session.conversationCycles.push(newCycle);
+  } else {
+    // Reuse existing cycle (user corrected choice)
+    lastCycle.selection = selection;
+  }
 
-            currentCycle.speaking.structuredStatements = [
-              `When: ${when.trim()}`,
-              `I feel: ${session.presentFeelings?.join(', ') || '...'}`,
-              `I need: ${session.desiredFeelings?.join(', ') || '...'}`,
-              `Would you be willing to... ${request.trim()}`
-            ];
-          }
+  updated = true;
+  break;
+}
 
-          session.currentStep = 9;
-          updated = true;
-        } else if (step === 9) {
-          if (communicated) {
-            currentCycle.listening.communicated = communicated.trim();
-            currentCycle.listening.timestamp = new Date();
+case 7: {
+  // Step 7 is static instructions – no payload needed
+  // Move forward based on current cycle's selection
 
-            // Check completion
-            if (currentCycle.speaking.experience) {
-              currentCycle.completed = true;
-            }
-          }
-          session.currentStep = 10;
-          updated = true;
-        } else if (step === 10) {
-          if (continueConversation === true) {
-            if (!currentCycle.completed) {
-              return res.status(400).json({
-                success: false,
-                message: 'Complete both speaking and listening first',
-              });
-            }
-            session.currentStep = 11;
-            updated = true;
-          } else if (continueConversation === false) {
-            session.currentStep = 6;
-            updated = true;
-          } else {
-            return res.status(400).json({
-              success: false,
-              message: 'Must set continueConversation: true/false',
-            });
-          }
-        }
-        break;
-      }
+  const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+
+  if (!currentCycle || !currentCycle.selection) {
+    return res.status(400).json({
+      success: false,
+      message: 'No active cycle or selection found – return to step 6',
+    });
+  }
+
+  // Redirect based on selection
+  session.currentStep = currentCycle.selection === 'speaking' ? 8 : 9;
+  updated = true;
+  break;
+}
+
+case 8: {
+  // Speaking path only – should only be reachable if selection = speaking
+  const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+
+  if (!currentCycle || currentCycle.selection !== 'speaking') {
+    return res.status(400).json({
+      success: false,
+      message: 'Step 8 is only for speaking path – return to step 6',
+    });
+  }
+
+  const {
+    experience,
+    assumptions,
+    helpStructureSelected,
+    when,
+    request,
+  } = req.body;
+
+  if (experience) currentCycle.speaking.experience = experience.trim();
+  if (assumptions) currentCycle.speaking.assumptions = assumptions.trim();
+  currentCycle.speaking.helpStructureSelected = !!helpStructureSelected;
+
+  if (helpStructureSelected) {
+    if (!when || !request) {
+      return res.status(400).json({
+        success: false,
+        message: '"when" and "request" required when helpStructureSelected is true',
+      });
+    }
+
+    currentCycle.speaking.when = when.trim();
+    currentCycle.speaking.request = request.trim();
+
+    currentCycle.speaking.structuredStatements = [
+      `When: ${when.trim()}`,
+      `I feel: ${session.presentFeelings?.join(', ') || '...'}`,
+      `I need: ${session.desiredFeelings?.join(', ') || '...'}`,
+      `Would you be willing to... ${request.trim()}`
+    ];
+  }
+
+  // After speaking → back to step 7 (now for listening)
+  session.currentStep = 7;
+  updated = true;
+  break;
+}
+
+case 9: {
+  // Listening path only
+  const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+
+  if (!currentCycle || currentCycle.selection !== 'listening') {
+    return res.status(400).json({
+      success: false,
+      message: 'Step 9 is only for listening path – return to step 6',
+    });
+  }
+
+  const { communicated } = req.body;
+
+  if (!communicated || typeof communicated !== 'string' || communicated.trim() === '') {
+    return res.status(400).json({
+      success: false,
+      message: 'communicated string is required',
+    });
+  }
+
+  currentCycle.listening.communicated = communicated.trim();
+  currentCycle.listening.timestamp = new Date();
+
+  // Check if cycle is complete
+  if (currentCycle.speaking.experience) {
+    currentCycle.completed = true;
+  }
+
+  session.currentStep = 10;
+  updated = true;
+  break;
+}
+
+case 10: {
+  const { markAsResolved, continueReflection } = req.body;
+
+  const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+
+  if (!currentCycle) {
+    return res.status(400).json({ success: false, message: 'No active cycle' });
+  }
+
+  if (markAsResolved === true) {
+    if (!currentCycle.completed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Complete both speaking and listening in the current cycle first',
+      });
+    }
+    session.currentStep = 11;
+    updated = true;
+  } else if (continueReflection === true) {
+    session.currentStep = 6;
+    updated = true;
+  } else {
+    return res.status(400).json({
+      success: false,
+      message: 'Must send markAsResolved: true or continueReflection: true',
+    });
+  }
+  break;
+}
 
       case 11: {
         const { rating } = req.body;
