@@ -94,7 +94,7 @@ exports.updateStep = async (req, res) => {
           rating,
           category: getDistressCategory(rating),
         };
-        // session.currentStep = 2;
+        session.currentStep = 2;  // Manually move to next
         updated = true;
         break;
       }
@@ -105,7 +105,7 @@ exports.updateStep = async (req, res) => {
           return res.status(400).json({ success: false, message: 'doBreathing must be boolean' });
         }
         session.isBreathingExercise = doBreathing;
-        // session.currentStep = 3;
+        session.currentStep = 3;
         updated = true;
         break;
       }
@@ -123,39 +123,39 @@ exports.updateStep = async (req, res) => {
       }
 
       case 4: {
-  const { continue: cont, break: brk, breakReason, resumeAt } = req.body;
+        const { continue: cont, break: brk, breakReason, resumeAt } = req.body;
 
-  if (cont === true) {
-    // Continue to step 5
-    session.currentStep = 5;
-    updated = true;
-  } else if (brk === true) {
-    session.choseToBreak = true;
-    session.breakReason = breakReason || 'No reason provided';
+        if (cont === true) {
+          session.currentStep = 5;
+          updated = true;
+        } else if (brk === true) {
+          session.choseToBreak = true;
+          session.breakReason = breakReason || 'No reason provided';
 
-    if (resumeAt) {
-      const resumeDate = new Date(resumeAt);
-      if (!isNaN(resumeDate.getTime()) && resumeDate > new Date()) {
-        const { scheduleReminder } = require('../utils/scheduler');
-        await scheduleReminder(
-          req.user.userId,
-          resumeDate,
-          sessionId,
-          'It’s time to continue your Live Conflict reflection!'
-        );
-        session.resumeAt = resumeDate;
-      } else {
-        console.warn(`Invalid resumeAt for session ${sessionId} – ignoring`);
+          if (resumeAt) {
+            const resumeDate = new Date(resumeAt);
+            if (!isNaN(resumeDate.getTime()) && resumeDate > new Date()) {
+              const { scheduleReminder } = require('../utils/scheduler');
+              await scheduleReminder(
+                req.user.userId,
+                resumeDate,
+                sessionId,
+                'It’s time to continue your Live Conflict reflection!'
+              );
+              session.resumeAt = resumeDate;
+            } else {
+              console.warn(`Invalid resumeAt for session ${sessionId} – ignoring`);
+            }
+          }
+
+          session.currentStep = 12; // Jump to final step
+          updated = true;
+        } else {
+          return res.status(400).json({ success: false, message: 'Must specify continue: true or break: true' });
+        }
+        break;
       }
-    }
 
-    session.currentStep = 12; // Jump to final step
-    updated = true;
-  } else {
-    return res.status(400).json({ success: false, message: 'Must specify continue: true or break: true' });
-  }
-  break;
-}
       case 5: {
         const { agreed } = req.body;
         if (typeof agreed !== 'boolean') {
@@ -167,177 +167,178 @@ exports.updateStep = async (req, res) => {
         break;
       }
 
+      // ── Steps 6–10: Conversation loop ────────────────────────────────────────
       case 6: {
-  const { selection } = req.body;  // "speaking" or "listening"
+        const { selection } = req.body;  // "speaking" or "listening"
 
-  if (!['speaking', 'listening'].includes(selection)) {
-    return res.status(400).json({
-      success: false,
-      message: 'selection must be "speaking" or "listening"',
-    });
-  }
+        if (!['speaking', 'listening'].includes(selection)) {
+          return res.status(400).json({
+            success: false,
+            message: 'selection must be "speaking" or "listening"',
+          });
+        }
 
-  // Reset unfinished cycle if returning to step 6
-  const lastCycle = session.conversationCycles[session.conversationCycles.length - 1];
-  if (lastCycle && !lastCycle.completed) {
-    lastCycle.speaking = {};
-    lastCycle.listening = {};
-    lastCycle.selection = null;
-    lastCycle.completed = false;
-    console.log(`Cycle ${lastCycle.cycleNumber} reset – returned to step 6`);
-  }
+        // Reset unfinished cycle if returning to step 6
+        const lastCycle = session.conversationCycles[session.conversationCycles.length - 1];
+        if (lastCycle && !lastCycle.completed) {
+          lastCycle.speaking = {};
+          lastCycle.listening = {};
+          lastCycle.selection = null;
+          lastCycle.completed = false;
+          console.log(`Cycle ${lastCycle.cycleNumber} reset – returned to step 6`);
+        }
 
-  // Always move to step 7, but remember selection
-  session.currentStep = 7;
+        // Always move to step 7, remember selection
+        session.currentStep = 7;
 
-  // If new cycle needed, create it
-  if (!lastCycle || lastCycle.completed) {
-    const newCycle = {
-      cycleNumber: session.conversationCycles.length + 1,
-      selection,
-      speaking: {},
-      listening: {},
-      completed: false,
-    };
-    session.conversationCycles.push(newCycle);
-  } else {
-    // Reuse existing cycle (user corrected choice)
-    lastCycle.selection = selection;
-  }
+        // If new cycle needed, create it
+        if (!lastCycle || lastCycle.completed) {
+          const newCycle = {
+            cycleNumber: session.conversationCycles.length + 1,
+            selection,
+            speaking: {},
+            listening: {},
+            completed: false,
+          };
+          session.conversationCycles.push(newCycle);
+        } else {
+          // Reuse existing cycle (user corrected choice)
+          lastCycle.selection = selection;
+        }
 
-  updated = true;
-  break;
-}
+        updated = true;
+        break;
+      }
 
-case 7: {
-  // Step 7 is static instructions – no payload needed
-  // Move forward based on current cycle's selection
+      case 7: {
+        // Step 7 is static instructions – no payload needed
+        // Move forward based on current cycle's selection
 
-  const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+        const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
 
-  if (!currentCycle || !currentCycle.selection) {
-    return res.status(400).json({
-      success: false,
-      message: 'No active cycle or selection found – return to step 6',
-    });
-  }
+        if (!currentCycle || !currentCycle.selection) {
+          return res.status(400).json({
+            success: false,
+            message: 'No active cycle or selection found – return to step 6',
+          });
+        }
 
-  // Redirect based on selection
-  session.currentStep = currentCycle.selection === 'speaking' ? 8 : 9;
-  updated = true;
-  break;
-}
+        // Redirect based on selection
+        session.currentStep = currentCycle.selection === 'speaking' ? 8 : 9;
+        updated = true;
+        break;
+      }
 
-case 8: {
-  // Speaking path only – should only be reachable if selection = speaking
-  const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+      case 8: {
+        // Speaking path only
+        const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
 
-  if (!currentCycle || currentCycle.selection !== 'speaking') {
-    return res.status(400).json({
-      success: false,
-      message: 'Step 8 is only for speaking path – return to step 6',
-    });
-  }
+        if (!currentCycle || currentCycle.selection !== 'speaking') {
+          return res.status(400).json({
+            success: false,
+            message: 'Step 8 is only for speaking path – return to step 6',
+          });
+        }
 
-  const {
-    experience,
-    assumptions,
-    helpStructureSelected,
-    when,
-    request,
-  } = req.body;
+        const {
+          experience,
+          assumptions,
+          helpStructureSelected,
+          when,
+          request,
+        } = req.body;
 
-  if (experience) currentCycle.speaking.experience = experience.trim();
-  if (assumptions) currentCycle.speaking.assumptions = assumptions.trim();
-  currentCycle.speaking.helpStructureSelected = !!helpStructureSelected;
+        if (experience) currentCycle.speaking.experience = experience.trim();
+        if (assumptions) currentCycle.speaking.assumptions = assumptions.trim();
+        currentCycle.speaking.helpStructureSelected = !!helpStructureSelected;
 
-  if (helpStructureSelected) {
-    if (!when || !request) {
-      return res.status(400).json({
-        success: false,
-        message: '"when" and "request" required when helpStructureSelected is true',
-      });
-    }
+        if (helpStructureSelected) {
+          if (!when || !request) {
+            return res.status(400).json({
+              success: false,
+              message: '"when" and "request" required when helpStructureSelected is true',
+            });
+          }
 
-    currentCycle.speaking.when = when.trim();
-    currentCycle.speaking.request = request.trim();
+          currentCycle.speaking.when = when.trim();
+          currentCycle.speaking.request = request.trim();
 
-    currentCycle.speaking.structuredStatements = [
-      `When: ${when.trim()}`,
-      `I feel: ${session.presentFeelings?.join(', ') || '...'}`,
-      `I need: ${session.desiredFeelings?.join(', ') || '...'}`,
-      `Would you be willing to... ${request.trim()}`
-    ];
-  }
+          currentCycle.speaking.structuredStatements = [
+            `When: ${when.trim()}`,
+            `I feel: ${session.presentFeelings?.join(', ') || '...'}`,
+            `I need: ${session.desiredFeelings?.join(', ') || '...'}`,
+            `Would you be willing to... ${request.trim()}`
+          ];
+        }
 
-  // After speaking → back to step 7 (now for listening)
-  session.currentStep = 7;
-  updated = true;
-  break;
-}
+        // After speaking → back to step 7 (now for listening)
+        session.currentStep = 7;
+        updated = true;
+        break;
+      }
 
-case 9: {
-  // Listening path only
-  const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+      case 9: {
+        // Listening path only
+        const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
 
-  if (!currentCycle || currentCycle.selection !== 'listening') {
-    return res.status(400).json({
-      success: false,
-      message: 'Step 9 is only for listening path – return to step 6',
-    });
-  }
+        if (!currentCycle || currentCycle.selection !== 'listening') {
+          return res.status(400).json({
+            success: false,
+            message: 'Step 9 is only for listening path – return to step 6',
+          });
+        }
 
-  const { communicated } = req.body;
+        const { communicated } = req.body;
 
-  if (!communicated || typeof communicated !== 'string' || communicated.trim() === '') {
-    return res.status(400).json({
-      success: false,
-      message: 'communicated string is required',
-    });
-  }
+        if (!communicated || typeof communicated !== 'string' || communicated.trim() === '') {
+          return res.status(400).json({
+            success: false,
+            message: 'communicated string is required',
+          });
+        }
 
-  currentCycle.listening.communicated = communicated.trim();
-  currentCycle.listening.timestamp = new Date();
+        currentCycle.listening.communicated = communicated.trim();
+        currentCycle.listening.timestamp = new Date();
 
-  // Check if cycle is complete
-  if (currentCycle.speaking.experience) {
-    currentCycle.completed = true;
-  }
+        // Check if cycle is complete
+        if (currentCycle.speaking.experience) {
+          currentCycle.completed = true;
+        }
 
-  session.currentStep = 10;
-  updated = true;
-  break;
-}
+        session.currentStep = 10;
+        updated = true;
+        break;
+      }
 
-case 10: {
-  const { markAsResolved, continueReflection } = req.body;
+      case 10: {
+        const { markAsResolved, continueReflection } = req.body;
 
-  const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+        const currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
 
-  if (!currentCycle) {
-    return res.status(400).json({ success: false, message: 'No active cycle' });
-  }
+        if (!currentCycle) {
+          return res.status(400).json({ success: false, message: 'No active cycle' });
+        }
 
-  if (markAsResolved === true) {
-    if (!currentCycle.completed) {
-      return res.status(400).json({
-        success: false,
-        message: 'Complete both speaking and listening in the current cycle first',
-      });
-    }
-    session.currentStep = 11;
-    updated = true;
-  } else if (continueReflection === true) {
-    session.currentStep = 6;
-    updated = true;
-  } else {
-    return res.status(400).json({
-      success: false,
-      message: 'Must send markAsResolved: true or continueReflection: true',
-    });
-  }
-  break;
-}
+        if (markAsResolved === true) {
+          if (!currentCycle.completed) {
+            return res.status(400).json({
+              success: false,
+              message: 'Complete both speaking and listening in the current cycle first',
+            });
+          }
+          session.currentStep = 11;
+          updated = true;
+        } else if (continueReflection === true) {
+          session.currentStep = 6;
+          updated = true;
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: 'Must send markAsResolved: true or continueReflection: true',
+          });
+        }
+        break;
+      }
 
       case 11: {
         const { rating } = req.body;
@@ -354,7 +355,6 @@ case 10: {
       }
 
       case 12: {
-        // Final completion
         session.isCompleted = true;
         updated = true;
         break;
@@ -365,9 +365,6 @@ case 10: {
     }
 
     if (updated) {
-      if (session.currentStep < 12) {
-        session.currentStep += 1;
-      }
       await session.save();
 
       res.json({
@@ -376,6 +373,8 @@ case 10: {
         currentStep: session.currentStep,
         session,
       });
+    } else {
+      res.status(400).json({ success: false, message: 'No update performed' });
     }
   } catch (error) {
     console.error('updateStep error:', error);
