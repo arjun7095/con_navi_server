@@ -40,39 +40,44 @@ const liveConflictSchema = new mongoose.Schema({
   // Step 4 – Break option
   choseToBreak: { type: Boolean, default: false },
   breakReason: String,
-  resumeAt: Date,               // for scheduled push notification
+  resumeAt: Date,
 
   // Step 5
   nonNegotiablesAgreed: { type: Boolean, default: false },
 
-  // Steps 6–10: Conversation cycles (updated structure)
+  // Steps 6–10: Conversation cycles
   conversationCycles: [{
-  cycleNumber: { type: Number, required: true },
-  
-  // Which path was chosen for this cycle
-  selection: { 
-    type: String, 
-    enum: ['speaking', 'listening', null], 
-    default: null 
-  },
+    cycleNumber: { type: Number, required: true },
 
-  speaking: {
-    experience: { type: String, trim: true },
-    assumptions: { type: String, trim: true },
-    helpStructureSelected: { type: Boolean, default: false },
-    when: { type: String, trim: true },
-    request: { type: String, trim: true },
-    structuredStatements: [{ type: String }],
-    timestamp: { type: Date, default: Date.now },
-  },
+    // NEW: Selection for this cycle
+    selection: { 
+      type: String, 
+      enum: ['speaking', 'listening', null], 
+      default: null 
+    },
 
-  listening: {
-    communicated: { type: String, trim: true },
-    timestamp: { type: Date, default: Date.now },
-  },
+    // NEW: Completion flags per side
+    isSpeakingComplete: { type: Boolean, default: false },
+    isListeningComplete: { type: Boolean, default: false },
 
-  completed: { type: Boolean, default: false },
-}],
+    speaking: {
+      experience: { type: String, trim: true },
+      assumptions: { type: String, trim: true },
+      helpStructureSelected: { type: Boolean, default: false },
+      when: { type: String, trim: true },
+      request: { type: String, trim: true },
+      structuredStatements: [{ type: String }],
+      timestamp: { type: Date, default: Date.now },
+    },
+
+    listening: {
+      communicated: { type: String, trim: true },
+      timestamp: { type: Date, default: Date.now },
+    },
+
+    // Cycle complete only when both flags are true
+    completed: { type: Boolean, default: false },
+  }],
 
   // Step 11
   finalDistress: {
@@ -101,9 +106,17 @@ const liveConflictSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Auto-update fields on save
+// Auto-update logic (updated to use new flags)
 liveConflictSchema.pre('save', function (next) {
   this.updatedAt = new Date();
+
+  // Auto-set completed if both sides are done
+  const lastCycle = this.conversationCycles[this.conversationCycles.length - 1];
+  if (lastCycle) {
+    if (lastCycle.isSpeakingComplete && lastCycle.isListeningComplete) {
+      lastCycle.completed = true;
+    }
+  }
 
   if (this.isCompleted) {
     this.status = 'completed';
@@ -112,7 +125,6 @@ liveConflictSchema.pre('save', function (next) {
       this.totalDurationMinutes = Math.round((this.completedAt - this.startedAt) / (1000 * 60));
     }
   }
-
 });
 
 module.exports = mongoose.model('LiveConflictSession', liveConflictSchema);
