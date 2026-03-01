@@ -51,13 +51,15 @@ exports.getProfileById = async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 // PUT /api/profile/:userId
 // ──────────────────────────────────────────────────────────────
+// src/controllers/userController.js (or wherever your profile update lives)
+
 exports.updateProfileById = async (req, res) => {
   try {
     const requestedUserId = req.params.userId;
     const currentUserId = req.user.userId;
     const isAdmin = req.user.role === 'admin';
 
-    // Security: only allow updating own profile (or admin)
+    // Security: only allow own profile update (admins can update any)
     if (requestedUserId !== currentUserId && !isAdmin) {
       return res.status(403).json({
         success: false,
@@ -65,14 +67,15 @@ exports.updateProfileById = async (req, res) => {
       });
     }
 
+    // Allowed fields – add more as needed
     const allowedFields = [
       'name',
       'email',
-      'avatar',                // base64 image
-      'profileImageUrl',       // base64 or URL
+      'avatar',                // base64 image string
+      'profileImageUrl',       // base64 or external URL
       'notificationPreference',
       'dataAnalyticsEnabled',
-      // Add more fields if needed: ageGroup, gender, etc.
+      // 'ageGroup', 'gender', etc. – add if you have them
     ];
 
     const updates = {};
@@ -82,56 +85,55 @@ exports.updateProfileById = async (req, res) => {
       }
     });
 
-    // Validate allowed enum fields
+    // Validate enum fields
     if (
       updates.notificationPreference &&
       !['all', 'important', 'none'].includes(updates.notificationPreference)
     ) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid notification preference value',
+        message: 'Invalid notificationPreference value',
       });
     }
 
-    // Optional: Basic base64 validation for images
-    const validateBase64 = (base64String) => {
-      if (typeof base64String !== 'string') return false;
-      // Remove data:image/...;base64, prefix if present
-      const cleanBase64 = base64String.replace(/^data:image\/[a-z]+;base64,/, '');
-      // Check if it's valid base64 (simple regex + length)
-      return /^[A-Za-z0-9+/=]+$/.test(cleanBase64) && cleanBase64.length > 20; // min length to avoid junk
+    // Basic base64 validation for images (prevent invalid data)
+    const isValidBase64 = (str) => {
+      if (typeof str !== 'string') return false;
+      // Strip optional data URI prefix
+      const base64 = str.replace(/^data:image\/[a-z]+;base64,/, '');
+      // Check valid base64 chars and reasonable length
+      return /^[A-Za-z0-9+/=]+$/.test(base64) && base64.length >= 20;
     };
 
-    if (updates.avatar && !validateBase64(updates.avatar)) {
+    if (updates.avatar && !isValidBase64(updates.avatar)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid base64 format for avatar',
+        message: 'Invalid base64 string for avatar',
       });
     }
 
-    if (updates.profileImageUrl && !validateBase64(updates.profileImageUrl)) {
+    if (updates.profileImageUrl && !isValidBase64(updates.profileImageUrl)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid base64 format for profileImageUrl',
+        message: 'Invalid base64 string for profileImageUrl',
       });
     }
 
-    // Perform the update using modern MongoDB option
+    // Perform the update
     const updatedUser = await User.findByIdAndUpdate(
       requestedUserId,
       { $set: updates },
       {
-        returnDocument: 'after',     // ← modern replacement for { new: true }
+        returnDocument: 'after',   // modern replacement for { new: true }
         runValidators: true,
-        new: false,                  // we use returnDocument instead
       }
-    ).select('-refreshToken -__v -otp -otpExpires'); // exclude sensitive fields
+    ).select('-refreshToken -__v -otp -otpExpires -password'); // exclude sensitive fields
 
     if (!updatedUser) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Optional: Re-evaluate profile completeness (if you still want it)
+    // Optional: Re-check profile completeness (if your logic needs it)
     if (!updatedUser.isProfileComplete) {
       updatedUser.isProfileComplete = !!(
         updatedUser.name &&
@@ -139,10 +141,10 @@ exports.updateProfileById = async (req, res) => {
         (updatedUser.avatar || updatedUser.profileImageUrl) &&
         updatedUser.notificationPreference
       );
-      await updatedUser.save({ validateBeforeSave: false }); // skip full validation if needed
+      await updatedUser.save({ validateBeforeSave: false }); // skip validators if needed
     }
 
-    // Prepare clean response
+    // Clean response – only safe fields
     return res.json({
       success: true,
       message: 'Profile updated successfully',
@@ -166,7 +168,7 @@ exports.updateProfileById = async (req, res) => {
     if (err.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: 'Duplicate value detected (likely email)',
+        message: 'Duplicate value (e.g. email already exists)',
       });
     }
 
