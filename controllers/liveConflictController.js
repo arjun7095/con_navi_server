@@ -163,56 +163,106 @@ exports.updateStep = async (req, res) => {
       }
 
       case 6:
-      case 7:
-      case 8:
-      case 9:
-      case 10: {
-        const { isSpeaking, experience, assumptions, checkboxSelected, communicated, continueConversation } = req.body;
+case 7:
+case 8:
+case 9:
+case 10: {
+  const {
+    action,                     // "select-speaking" or "select-listening"
+    experience,
+    assumptions,
+    helpStructureSelected,
+    when,
+    request,
+    communicated,
+    continueConversation,
+  } = req.body;
 
-        let currentCycle = session.conversationCycles[session.conversationCycles.length - 1];
+  // Find current unfinished cycle or create new one
+  let currentCycle = session.conversationCycles.find(c => !c.completed);
+  if (!currentCycle) {
+    currentCycle = {
+      cycleNumber: session.conversationCycles.length + 1,
+      speaking: {},
+      listening: {},
+      completed: false,
+    };
+    session.conversationCycles.push(currentCycle);
+  }
 
-        if (!currentCycle) {
-          // Start new cycle if none exists
-          currentCycle = {
-            cycleNumber: session.conversationCycles.length + 1,
-            speaking: {},
-            listening: {},
-          };
-          session.conversationCycles.push(currentCycle);
-        }
+  if (action === 'select-speaking') {
+    // User chose speaking → move to step 7 (static instructions – no data save)
+    session.currentStep = 7;
+    updated = true;
+  } else if (step === 7) {
+    // Step 7 is just instructions – no payload needed, just advance
+    session.currentStep = 8;
+    updated = true;
+  } else if (step === 8) {
+    // Speaking inputs + checkbox
+    if (experience) currentCycle.speaking.experience = experience.trim();
+    if (assumptions) currentCycle.speaking.assumptions = assumptions.trim();
+    currentCycle.speaking.helpStructureSelected = !!helpStructureSelected;
 
-        if (continueConversation === true) {
-          if (!currentCycle.speaking.content || !currentCycle.listening.communicated) {
-            return res.status(400).json({ success: false, message: 'Complete both speaking and listening in the current cycle first' });
-          }
-          currentCycle.completed = true;
-          session.currentStep = 11;
-          updated = true;
-        } else if (isSpeaking) {
-          // Speaking update (step 8)
-          currentCycle.speaking = {
-            experience: experience?.trim(),
-            assumptions: assumptions?.trim(),
-            checkboxSelected: !!checkboxSelected,
-            structuredStatements: checkboxSelected ? generateStructuredStatements(experience, { 
-              presentFeelings: session.presentFeelings, 
-              desiredFeelings: session.desiredFeelings 
-            }) : [],
-            timestamp: new Date(),
-          };
-          updated = true;
-        } else if (communicated) {
-          // Listening update (step 9)
-          currentCycle.listening = {
-            communicated: communicated.trim(),
-            timestamp: new Date(),
-          };
-          updated = true;
-        } else {
-          return res.status(400).json({ success: false, message: 'Provide isSpeaking + data OR communicated OR continueConversation' });
-        }
-        break;
+    // If checkbox selected → require when & request, generate structured statements
+    if (helpStructureSelected) {
+      if (!when || !request) {
+        return res.status(400).json({
+          success: false,
+          message: 'When checkbox is selected, "when" and "request" strings are required',
+        });
       }
+
+      currentCycle.speaking.when = when.trim();
+      currentCycle.speaking.request = request.trim();
+
+      currentCycle.speaking.structuredStatements = [
+        `When: ${when.trim()}`,
+        `I feel: ${session.presentFeelings?.join(', ') || '...'}`,
+        `I need: ${session.desiredFeelings?.join(', ') || '...'}`,
+        `Would you be willing to... ${request.trim()}`,
+      ];
+    }
+
+    session.currentStep = 9;  // Move to listening
+    updated = true;
+  } else if (step === 9) {
+    // Listening input
+    if (communicated) {
+      currentCycle.listening.communicated = communicated.trim();
+      currentCycle.listening.timestamp = new Date();
+
+      // Check if cycle is now complete (both sides filled)
+      if (currentCycle.speaking.experience) {
+        currentCycle.completed = true;
+      }
+    }
+    session.currentStep = 10;
+    updated = true;
+  } else if (step === 10) {
+    if (continueConversation === true) {
+      // User wants to resolve → go to reflection (step 11)
+      if (!currentCycle.completed) {
+        return res.status(400).json({
+          success: false,
+          message: 'Complete both speaking and listening in the current cycle first',
+        });
+      }
+      session.currentStep = 11;
+      updated = true;
+    } else if (continueConversation === false) {
+      // Restart conversation → new cycle, back to step 6
+      session.currentStep = 6;
+      updated = true;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Must specify continueConversation: true (resolve) or false (restart)',
+      });
+    }
+  }
+  break;
+}
 
       case 11: {
         const { rating } = req.body;
