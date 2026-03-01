@@ -14,4 +14,7 @@ router.get('/:sessionId', postConflictController.getSessions);
 // router.get('/:sessionId', postConflictController.getSession);
 router.get('/:sessionId/resume', postConflictController.resumeSession);
 
+//get all sessions for user
+router.get('/sessions', postConflictController.getAllPostConflictSessions);
+
 module.exports = router;

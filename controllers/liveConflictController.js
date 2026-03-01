@@ -595,3 +595,29 @@ exports.completeSession = async (req, res) => {
     });
   }
 };
+
+exports.getAllLiveConflictSessions = async (req, res) => {
+  try {
+    const sessions = await LiveConflictSession.find({ userId: req.user.userId })
+      .sort({ createdAt: -1 })  // newest first
+      .lean();
+
+    const enhancedSessions = sessions.map(session => ({
+      ...session,
+      resumable: session.status === 'active' || session.status === 'paused',
+      nextStep: session.currentStep,
+      cycleCount: session.conversationCycles?.length || 0,
+      completedCycles: session.conversationCycles?.filter(c => c.completed).length || 0,
+      totalDurationMinutes: session.totalDurationMinutes || null,
+    }));
+
+    res.json({
+      success: true,
+      total: enhancedSessions.length,
+      sessions: enhancedSessions,
+    });
+  } catch (error) {
+    console.error('getAllLiveConflictSessions error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
