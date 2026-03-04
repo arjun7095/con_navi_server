@@ -32,7 +32,8 @@ const sendPushToUser = async (userId, title, body, data = {}, dryRun = false) =>
       },
     };
 
-    const response = await messaging.sendEachForMulticast(message, { dryRun });
+    // FIXED: pass dryRun directly as boolean (not { dryRun })
+    const response = await messaging.sendEachForMulticast(message, dryRun);
 
     console.log(
       `FCM multicast to user ${userId} (${dryRun ? 'DRY RUN' : 'LIVE'}): ` +
