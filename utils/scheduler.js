@@ -27,31 +27,28 @@ exports.scheduleReminder = async (userId, resumeAt, sessionId, message = 'It’s
       return;
     }
 
-    // Optional: avoid scheduling too close (e.g. < 30 seconds) → could miss due to delay
+    // Avoid scheduling extremely soon (< 30s) – risk of missing due to delay
     if ((resumeDate - now) < 30_000) {
-      console.warn(`Resume time too soon (${resumeDate.toISOString()}) for session ${sessionId} – consider sending immediately instead`);
-      // You could optionally call sendPushToUser() here instead
+      console.warn(`Resume time too soon for session ${sessionId} – consider immediate send`);
       return;
     }
 
-    // Cancel any existing reminder for this session
+    // Cancel existing job if any
     if (scheduledReminders.has(sessionId)) {
       scheduledReminders.get(sessionId).stop();
       scheduledReminders.delete(sessionId);
       console.log(`Existing reminder cancelled for session ${sessionId}`);
     }
 
-    // Round UP to next minute if seconds present → avoids node-cron missing exact second
+    // Round UP to next full minute (prevents node-cron missing due to seconds)
     let targetDate = new Date(resumeDate);
     if (targetDate.getSeconds() > 0 || targetDate.getMilliseconds() > 0) {
       targetDate.setMinutes(targetDate.getMinutes() + 1);
       targetDate.setSeconds(0);
       targetDate.setMilliseconds(0);
-      console.log(`Rounded resume time from ${resumeDate.toISOString()} → ${targetDate.toISOString()} (to avoid node-cron second-precision issues)`);
+      console.log(`Rounded resume time: ${resumeDate.toISOString()} → ${targetDate.toISOString()}`);
     }
 
-    // node-cron format: second minute hour day month day-of-week
-    // We force second = 0 for reliability
     const cronExpression = `0 ${targetDate.getMinutes()} ${targetDate.getHours()} ${targetDate.getDate()} ${targetDate.getMonth() + 1} *`;
 
     console.log(`Scheduling reminder for session ${sessionId} at ${targetDate.toISOString()} (server time)`);
@@ -59,52 +56,55 @@ exports.scheduleReminder = async (userId, resumeAt, sessionId, message = 'It’s
     const job = cron.schedule(
       cronExpression,
       async () => {
-        console.log(`[CRON FIRED] ${new Date().toISOString()} – checking session ${sessionId}`);
+        console.log(`[CRON FIRED] ${new Date().toISOString()} – processing session ${sessionId}`);
 
         try {
           const session = await LiveConflictSession.findById(sessionId);
           if (!session) {
-            console.log(`Session ${sessionId} not found – skipping reminder`);
+            console.log(`Session ${sessionId} not found`);
             return;
           }
-
           if (session.status !== 'paused') {
-            console.log(`Session ${sessionId} no longer paused (status: ${session.status}) – skipping reminder`);
+            console.log(`Session ${sessionId} no longer paused (status: ${session.status})`);
             return;
           }
 
-          console.log(`Sending resume push → user ${userId}, session ${sessionId}`);
-          await sendPushToUser(userId, 'Resume Reminder', message);
+          console.log(`Attempting resume push → user ${userId}, session ${sessionId}`);
+          const pushResult = await sendPushToUser(userId, 'Resume Reminder', message);
 
-          // Clear resumeAt so we don't accidentally re-trigger
-          session.resumeAt = null;
-          await session.save();
-
-          console.log(`Resume reminder sent successfully for session ${sessionId} to user ${userId}`);
+          if (pushResult.successCount > 0) {
+            console.log(`Resume reminder sent successfully to user ${userId} (session ${sessionId})`);
+            session.resumeAt = null;
+            await session.save();
+          } else {
+            console.warn(
+              `Resume push failed (${pushResult.failureCount} failed, ${pushResult.failedTokensCount || 0} tokens cleaned) ` +
+              `for session ${sessionId} – likely invalid FCM token`
+            );
+            // Optional: you could mark session or notify admin here
+          }
         } catch (err) {
-          console.error(`[CRON ERROR] Failed to process reminder for session ${sessionId}:`, err);
+          console.error(`[CRON ERROR] session ${sessionId}:`, err);
         } finally {
-          // Always clean up
           scheduledReminders.delete(sessionId);
-          console.log(`Cleaned up scheduled job for session ${sessionId}`);
+          console.log(`Cleaned up job for session ${sessionId}`);
         }
       },
       {
         scheduled: true,
-        timezone: 'Asia/Kolkata'   // Explicit IST – recommended if server might run in different TZ
+        timezone: 'Asia/Kolkata'  // Explicit IST – prevents timezone surprises
       }
     );
 
     scheduledReminders.set(sessionId, job);
-
-    console.log(`Reminder successfully scheduled for session ${sessionId} at ~${targetDate.toISOString()}`);
+    console.log(`Reminder scheduled for session ${sessionId} at ~${targetDate.toISOString()}`);
   } catch (err) {
     console.error(`scheduleReminder error for session ${sessionId}:`, err);
   }
 };
 
 /**
- * Cancel a scheduled reminder for a session
+ * Cancel a scheduled reminder
  * @param {string} sessionId
  */
 exports.cancelReminder = (sessionId) => {
@@ -112,24 +112,12 @@ exports.cancelReminder = (sessionId) => {
     scheduledReminders.get(sessionId).stop();
     scheduledReminders.delete(sessionId);
     console.log(`Reminder cancelled for session ${sessionId}`);
-  } else {
-    console.log(`No scheduled reminder found to cancel for session ${sessionId}`);
   }
 };
 
-/**
- * IMPORTANT PRODUCTION NOTE:
- * ───────────────────────────────────────────────
- * These jobs live in memory → they are LOST if:
- *   • Server restarts
- *   • App crashes
- *   • Deployment / pod restart
- *   • Dyno sleeps (Heroku), etc.
- *
- * For reliable production reminders:
- *   1. Keep `resumeAt` in DB
- *   2. Run a single recurring cron every 1–5 minutes:
- *        → Find all paused sessions where resumeAt <= now()
- *        → Send notification + clear resumeAt
- *   3. Libraries like Agenda, BullMQ or node-cron + DB scanner work well.
- */
+// PRODUCTION NOTE:
+// ───────────────────────────────────────────────
+// In-memory jobs → LOST on server restart/crash/redeploy.
+// For production reliability:
+//   - Store resumeAt in DB
+//   - Run recurring cron (every 1-5 min) to find & process due sessions
