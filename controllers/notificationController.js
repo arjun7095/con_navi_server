@@ -20,7 +20,6 @@ const sendPushToUser = async (userId, title, body, data = {}, dryRun = false) =>
       console.log(`No FCM tokens for user ${userId}`);
       return { successCount: 0, failureCount: 0, failedTokensCount: 0, message: 'No tokens' };
     }
-
     const message = {
       notification: { title, body },
       data,
