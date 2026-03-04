@@ -6,26 +6,31 @@ exports.verifyPhoneAndRole = async (req, res) => {
   const { idToken, role, fcmToken } = req.body;
 
   if (!idToken) {
-    return res.status(400).json({ success: false, message: "idToken is required" });
-  }
-
-  if (!role || !['user', 'admin', 'moderator'].includes(role)) {
-    return res.status(400).json({ success: false, message: "Valid role required" });
+    return res.status(400).json({
+      success: false,
+      message: "idToken is required",
+    });
   }
 
   try {
-    // Verify Firebase ID token (mobile app got this after OTP confirmation)
+    // Verify Firebase token ONLY here
     const decoded = await auth.verifyIdToken(idToken);
+
     const firebaseUid = decoded.uid;
-    const phoneNumber = decoded.phone_number; // e.g. +919876543210
+    const phoneNumber = decoded.phone_number;
 
     if (!phoneNumber) {
-      return res.status(400).json({ success: false, message: "Phone number not found in token" });
+      return res.status(400).json({
+        success: false,
+        message: "Phone number not found in token",
+      });
     }
 
-    // Parse countryCode + mobile (simple split – improve if needed)
-    const countryCode = phoneNumber.startsWith('+') ? phoneNumber.substring(0, phoneNumber.indexOf(phoneNumber.match(/\d/)[0])) : '+';
-    const mobile = phoneNumber.replace(countryCode, '');
+    const countryCode = phoneNumber.startsWith("+")
+      ? phoneNumber.slice(0, phoneNumber.length - 10)
+      : "+";
+
+    const mobile = phoneNumber.replace(countryCode, "");
 
     let user = await User.findOne({ firebaseUid });
 
@@ -36,25 +41,20 @@ exports.verifyPhoneAndRole = async (req, res) => {
         firebaseUid,
         countryCode,
         mobile,
-        role,               // trust client role on first signup (or restrict admin)
+        role: "user", // 🔒 NEVER trust frontend role
         lastLogin: new Date(),
       });
-      await user.save();
+
       isNewUser = true;
     } else {
       user.lastLogin = new Date();
-
-      // Optional: prevent role change after creation
-      // if (user.role !== role) { ... warning or reject ... }
-
-      await user.save();
     }
 
-    // Store/update FCM token for push
     if (fcmToken && !user.fcmTokens.includes(fcmToken)) {
       user.fcmTokens.push(fcmToken);
-      await user.save();
     }
+
+    await user.save();
 
     const { accessToken, refreshToken } = generateTokens({
       userId: user._id.toString(),
@@ -62,7 +62,6 @@ exports.verifyPhoneAndRole = async (req, res) => {
       role: user.role,
     });
 
-    // Optional: store refresh token
     user.refreshToken = refreshToken;
     await user.save();
 
@@ -72,8 +71,6 @@ exports.verifyPhoneAndRole = async (req, res) => {
       sameSite: "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-
-    const nextAction = isNewUser || !user.isProfileComplete ? "CompleteProfile" : "UserDashboard";
 
     return res.json({
       success: true,
@@ -92,14 +89,15 @@ exports.verifyPhoneAndRole = async (req, res) => {
         dataAnalyticsEnabled: user.dataAnalyticsEnabled,
         isProfileComplete: user.isProfileComplete,
       },
-      nextAction,
+      nextAction:
+        isNewUser || !user.isProfileComplete
+          ? "CompleteProfile"
+          : "UserDashboard",
     });
   } catch (err) {
-    console.error("Firebase verify error:", err);
     return res.status(401).json({
       success: false,
-      message: "Invalid or expired token",
-      error: err.message,
+      message: "Invalid or expired Firebase token",
     });
   }
 };
