@@ -4,101 +4,45 @@ const { generateTokens } = require('../utils/jwt');
 
 exports.verifyPhoneAndRole = async (req, res) => {
   const { idToken, role, fcmToken } = req.body;
-
   if (!idToken) {
-    return res.status(400).json({
-      success: false,
-      message: "idToken is required",
-    });
+    return res.status(400).json({ success: false, message: "idToken is required" });
   }
-
+  if (!role || !['user', 'admin', 'moderator'].includes(role)) {
+    return res.status(400).json({ success: false, message: "Valid role required" });
+  }
   try {
-    // Verify Firebase token ONLY here
     const decoded = await auth.verifyIdToken(idToken);
-
     const firebaseUid = decoded.uid;
-    const phoneNumber = decoded.phone_number;
-
+    const phoneNumber = decoded.phone_number; // e.g. +919876543210 
     if (!phoneNumber) {
-      return res.status(400).json({
-        success: false,
-        message: "Phone number not found in token",
-      });
-    }
-
-    const countryCode = phoneNumber.startsWith("+")
-      ? phoneNumber.slice(0, phoneNumber.length - 10)
-      : "+";
-
-    const mobile = phoneNumber.replace(countryCode, "");
-
+      return res.status(400).json({ success: false, message: "Phone number not found in token" });
+    } // Parse countryCode + mobile (simple split – improve if needed) 
+    const countryCode = phoneNumber.startsWith('+') ? phoneNumber.substring(0, phoneNumber.indexOf(phoneNumber.match(/\d/)[0])) : '+';
+    const mobile = phoneNumber.replace(countryCode, '');
     let user = await User.findOne({ firebaseUid });
-
     let isNewUser = false;
-
     if (!user) {
-      user = new User({
-        firebaseUid,
-        countryCode,
-        mobile,
-        role: "user", // 🔒 NEVER trust frontend role
-        lastLogin: new Date(),
-      });
-
+      user = new User({ firebaseUid, countryCode, mobile, role, lastLogin: new Date(), fcmTokens: fcmToken ? [fcmToken] : [] });
+      await user.save();
       isNewUser = true;
     } else {
       user.lastLogin = new Date();
-    }
-
+      await user.save();
+    } // Store/update FCM token for push 
     if (fcmToken && !user.fcmTokens.includes(fcmToken)) {
-      user.fcmTokens.push(fcmToken);
+      user.fcmTokens.push(fcmToken); await user.save();
     }
-
-    await user.save();
-
     const { accessToken, refreshToken } = generateTokens({
-      userId: user._id.toString(),
-      mobile: user.mobile,
-      role: user.role,
-    });
-
+      userId: user._id.toString(), mobile: user.mobile, role: user.role,
+    }); // Optional: store refresh token 
     user.refreshToken = refreshToken;
     await user.save();
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    return res.json({
-      success: true,
-      message: isNewUser ? "Account created" : "Login successful",
-      accessToken,
-      user: {
-        userId: user._id.toString(),
-        countryCode: user.countryCode,
-        mobile: user.mobile,
-        role: user.role,
-        name: user.name || null,
-        email: user.email || null,
-        avatar: user.avatar,
-        profileImageUrl: user.profileImageUrl,
-        notificationPreference: user.notificationPreference,
-        dataAnalyticsEnabled: user.dataAnalyticsEnabled,
-        isProfileComplete: user.isProfileComplete,
-      },
-      nextAction:
-        isNewUser || !user.isProfileComplete
-          ? "CompleteProfile"
-          : "UserDashboard",
-    });
+    res.cookie("refreshToken", refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 24 * 60 * 60 * 1000, });
+    const nextAction = isNewUser || !user.isProfileComplete ? "CompleteProfile" : "UserDashboard";
+    return res.json({ success: true, message: isNewUser ? "Account created" : "Login successful", accessToken, user: { userId: user._id.toString(), countryCode: user.countryCode, mobile: user.mobile, role: user.role, name: user.name || null, email: user.email || null, avatar: user.avatar, profileImageUrl: user.profileImageUrl, notificationPreference: user.notificationPreference, dataAnalyticsEnabled: user.dataAnalyticsEnabled, isProfileComplete: user.isProfileComplete, }, nextAction, });
   } catch (err) {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid or expired Firebase token",
-    });
+    console.error("Firebase verify error:", err);
+    return res.status(401).json({ success: false, message: "Invalid or expired token", error: err.message, });
   }
 };
 
