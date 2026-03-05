@@ -4,45 +4,130 @@ const { generateTokens } = require('../utils/jwt');
 
 exports.verifyPhoneAndRole = async (req, res) => {
   const { idToken, role, fcmToken } = req.body;
+
+  // Basic input validation
   if (!idToken) {
     return res.status(400).json({ success: false, message: "idToken is required" });
   }
   if (!role || !['user', 'admin', 'moderator'].includes(role)) {
-    return res.status(400).json({ success: false, message: "Valid role required" });
+    return res.status(400).json({ success: false, message: "Valid role required: user, admin, or moderator" });
   }
+
+  // Quick format sanity check (helps debug wrong token type early)
+  if (typeof idToken !== 'string' || !idToken.startsWith('eyJ')) {
+    console.error('Invalid idToken format – does not look like JWT');
+    return res.status(400).json({
+      success: false,
+      message: "Invalid idToken format – expected Firebase Auth JWT starting with 'eyJ...'"
+    });
+  }
+
   try {
+    console.log('[DEBUG] Verifying token... length:', idToken.length);
+
     const decoded = await auth.verifyIdToken(idToken);
+
+    console.log('[DEBUG] Token verified. UID:', decoded.uid);
+
     const firebaseUid = decoded.uid;
-    const phoneNumber = decoded.phone_number; // e.g. +919876543210 
+    const phoneNumber = decoded.phone_number; // e.g. +919876543210
+
     if (!phoneNumber) {
       return res.status(400).json({ success: false, message: "Phone number not found in token" });
-    } // Parse countryCode + mobile (simple split – improve if needed) 
-    const countryCode = phoneNumber.startsWith('+') ? phoneNumber.substring(0, phoneNumber.indexOf(phoneNumber.match(/\d/)[0])) : '+';
+    }
+
+    // Parse country code + mobile (your existing logic – can be improved later)
+    const countryCode = phoneNumber.startsWith('+') 
+      ? phoneNumber.substring(0, phoneNumber.indexOf(phoneNumber.match(/\d/)[0])) 
+      : '+';
     const mobile = phoneNumber.replace(countryCode, '');
+
     let user = await User.findOne({ firebaseUid });
     let isNewUser = false;
+
     if (!user) {
-      user = new User({ firebaseUid, countryCode, mobile, role, lastLogin: new Date(), fcmTokens: fcmToken ? [fcmToken] : [] });
+      user = new User({
+        firebaseUid,
+        countryCode,
+        mobile,
+        role,
+        lastLogin: new Date(),
+        fcmTokens: fcmToken ? [fcmToken] : []
+      });
       await user.save();
       isNewUser = true;
     } else {
       user.lastLogin = new Date();
+      // Only update role if you allow changes – otherwise remove this
+      // user.role = role;
       await user.save();
-    } // Store/update FCM token for push 
-    if (fcmToken && !user.fcmTokens.includes(fcmToken)) {
-      user.fcmTokens.push(fcmToken); await user.save();
     }
+
+    // Store/update FCM token
+    if (fcmToken && !user.fcmTokens.includes(fcmToken)) {
+      user.fcmTokens.push(fcmToken);
+      await user.save();
+    }
+
     const { accessToken, refreshToken } = generateTokens({
-      userId: user._id.toString(), mobile: user.mobile, role: user.role,
-    }); // Optional: store refresh token 
+      userId: user._id.toString(),
+      mobile: user.mobile,
+      role: user.role,
+    });
+
+    // Optional: store refresh token in DB
     user.refreshToken = refreshToken;
     await user.save();
-    res.cookie("refreshToken", refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 24 * 60 * 60 * 1000, });
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     const nextAction = isNewUser || !user.isProfileComplete ? "CompleteProfile" : "UserDashboard";
-    return res.json({ success: true, message: isNewUser ? "Account created" : "Login successful", accessToken, user: { userId: user._id.toString(), countryCode: user.countryCode, mobile: user.mobile, role: user.role, name: user.name || null, email: user.email || null, avatar: user.avatar, profileImageUrl: user.profileImageUrl, notificationPreference: user.notificationPreference, dataAnalyticsEnabled: user.dataAnalyticsEnabled, isProfileComplete: user.isProfileComplete, }, nextAction, });
+
+    return res.json({
+      success: true,
+      message: isNewUser ? "Account created" : "Login successful",
+      accessToken,
+      user: {
+        userId: user._id.toString(),
+        countryCode: user.countryCode,
+        mobile: user.mobile,
+        role: user.role,
+        name: user.name || null,
+        email: user.email || null,
+        avatar: user.avatar,
+        profileImageUrl: user.profileImageUrl,
+        notificationPreference: user.notificationPreference,
+        dataAnalyticsEnabled: user.dataAnalyticsEnabled,
+        isProfileComplete: user.isProfileComplete,
+      },
+      nextAction,
+    });
+
   } catch (err) {
-    console.error("Firebase verify error:", err);
-    return res.status(401).json({ success: false, message: "Invalid or expired token", error: err.message, });
+    console.error("Firebase verify error:", err.code || err.message, err);
+
+    let status = 401;
+    let message = "Invalid or expired token";
+
+    if (err.code === 'auth/id-token-expired') {
+      message = "Token has expired – please refresh and try again";
+    } else if (err.code === 'auth/invalid-id-token') {
+      message = "Invalid token format or signature";
+    } else if (err.code === 'auth/argument-error') {
+      message = "Token verification setup error (check service account)";
+      status = 500;
+    }
+
+    return res.status(status).json({
+      success: false,
+      message,
+      debug: process.env.NODE_ENV !== 'production' ? { code: err.code, error: err.message } : undefined
+    });
   }
 };
 
