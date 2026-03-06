@@ -70,7 +70,7 @@ exports.scheduleReminder = async (userId, resumeAt, sessionId, message = 'It’s
           }
 
           console.log(`Attempting resume push → user ${userId}, session ${sessionId}`);
-          const pushResult = await sendPushToUser(userId, 'Resume Reminder', message);
+          const pushResult = await sendPushToUser(userId, 'Revisit Paused Conflict', message);
 
           if (pushResult.successCount > 0) {
             console.log(`Resume reminder sent successfully to user ${userId} (session ${sessionId})`);

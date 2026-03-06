@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
+const startWeeklyConflictReminder = require('./utils/weeklyConflictReminder');
 
 const app = express();
 
@@ -13,6 +14,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Connect DB
 connectDB();
+startWeeklyConflictReminder();
 
 // Routes
 app.use('/api/auth', authRoutes);
