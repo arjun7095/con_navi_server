@@ -6,49 +6,61 @@ const postConflictSessionSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+
   status: {
     type: String,
     enum: ['draft', 'in_progress', 'completed'],
     default: 'draft',
   },
+
+  // STEP 1 (unchanged)
   step1: {
     rating: { type: Number, min: 1, max: 10 },
     category: { type: String },
   },
+
+  // ✅ NEW STEP 2 (feelings)
   step2: {
+    presentFeelings: [{ type: String, trim: true }],
+    desiredFeelings: [{ type: String, trim: true }],
+  },
+
+  // ✅ OLD STEP 2 → NOW STEP 3
+  step3: {
     experience:    { type: String, trim: true },
     react:         { type: String, trim: true },
     assumption:    { type: String, trim: true },
     thoughts:      { type: String, trim: true },
     understanding: { type: String, trim: true },
 
-    // terms array: only option and description are enforced
-    // extra fields (reason1, str1, str2, etc.) are stored dynamically
     terms: [{
       option:      { type: String, required: true, trim: true },
       description: { type: String, required: true, trim: true },
-      // NO other fields defined here → MongoDB stores everything extra automatically
     }],
   },
-  step3: {
+
+  // ✅ OLD STEP 3 → NOW STEP 4
+  step4: {
     rating: { type: Number, min: 1, max: 10 },
     category: { type: String },
     feedbackMessage: { type: String },
   },
-  step4: {
+
+  // ✅ OLD STEP 4 → NOW STEP 5
+  step5: {
     status: { type: String },
   },
+
   conflictTime: { type: Number },
   startedAt: { type: Date, default: Date.now },
   completedAt: { type: Date },
   lastUpdatedAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
+
 }, { strict: false, timestamps: true });
 
-// Pre-save hook – unchanged (only updates timestamp)
 postConflictSessionSchema.pre('save', function () {
   this.lastUpdatedAt = new Date();
-  // No next() – modern Mongoose handles it
 });
 
 module.exports = mongoose.model('PostConflictSession', postConflictSessionSchema);
