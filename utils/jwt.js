@@ -9,7 +9,7 @@ const generateTokens = (payload) => {
   const accessToken = jwt.sign(
     { ...payload, type: "access", version: 1 },
     process.env.JWT_ACCESS_SECRET,
-    { expiresIn: "15m" } // short-lived access token
+    { expiresIn: "30d" } // short-lived access token
   );
 
   const refreshToken = jwt.sign(

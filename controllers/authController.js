@@ -42,7 +42,7 @@ exports.verifyPhoneAndRole = async (req, res) => {
       : '+';
     const mobile = phoneNumber.replace(countryCode, '');
 
-    let user = await User.findOne({ firebaseUid });
+    let user = await User.findOne({ $or: [{ firebaseUid }, { mobile }] });
     let isNewUser = false;
 
     if (!user) {

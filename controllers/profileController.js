@@ -216,81 +216,118 @@ exports.deleteProfileById = async (req, res) => {
 };
 
 
-
 exports.getConflictStats = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = new mongoose.Types.ObjectId(req.user.userId);
 
-    // 1. Total Post Conflicts (any status)
+    // ── 1. TOTAL CONFLICT COUNTS ─────────────────────────
     const totalPost = await PostConflictSession.countDocuments({ userId });
-
-    // 2. Total Live Conflicts (any status)
     const totalLive = await LiveConflictSession.countDocuments({ userId });
 
-    // Combined total
     const totalConflicts = totalPost + totalLive;
 
-    // 3. Average time for completed Post Conflicts (using conflictTime field)
+    // ── 2. AVERAGE POST CONFLICT TIME ────────────────────
     const postCompletedAvg = await PostConflictSession.aggregate([
       {
         $match: {
-          userId: new mongoose.Types.ObjectId(userId),
-          status: 'completed',
+          userId,
+          status: "completed",
           conflictTime: { $exists: true, $ne: null }
         }
       },
       {
         $group: {
           _id: null,
-          average: { $avg: '$conflictTime' }
+          average: { $avg: "$conflictTime" }
         }
       }
     ]);
 
-    const avgPostTime = postCompletedAvg.length > 0 ? Math.round(postCompletedAvg[0].average) : 0;
+    const avgPostTime =
+      postCompletedAvg.length > 0
+        ? Math.round(postCompletedAvg[0].average)
+        : 0;
 
-    // 4. Average time for completed Live Conflicts (using totalDurationMinutes)
+    // ── 3. AVERAGE LIVE CONFLICT TIME ────────────────────
     const liveCompletedAvg = await LiveConflictSession.aggregate([
       {
         $match: {
-          userId: new mongoose.Types.ObjectId(userId),
-          status: 'completed',
+          userId,
+          status: "completed",
           totalDurationMinutes: { $exists: true, $ne: null }
         }
       },
       {
         $group: {
           _id: null,
-          average: { $avg: '$totalDurationMinutes' }
+          average: { $avg: "$totalDurationMinutes" }
         }
       }
     ]);
 
-    const avgLiveTime = liveCompletedAvg.length > 0 ? Math.round(liveCompletedAvg[0].average) : 0;
+    const avgLiveTime =
+      liveCompletedAvg.length > 0
+        ? Math.round(liveCompletedAvg[0].average)
+        : 0;
 
-    // Combined average time (weighted by number of completed sessions)
-    const totalCompleted = avgPostTime > 0 ? 1 : 0 + avgLiveTime > 0 ? 1 : 0;
-    const combinedAvgTime = totalCompleted > 0
-      ? Math.round((avgPostTime + avgLiveTime) / totalCompleted)
-      : 0;
+    // ── 4. COMBINED AVERAGE TIME ─────────────────────────
+    const times = [avgPostTime, avgLiveTime].filter(v => v > 0);
 
-    // 5. Number of unique common patterns across both (assuming field 'commonPatterns' is an array of strings in both models)
-    const postPatterns = await PostConflictSession.distinct('commonPatterns', {
-      userId: new mongoose.Types.ObjectId(userId),
-      status: 'completed',
-      commonPatterns: { $exists: true }
+    const combinedAvgTime =
+      times.length > 0
+        ? Math.round(times.reduce((a, b) => a + b, 0) / times.length)
+        : 0;
+
+    // ── 5. COMMON PATTERNS ACROSS SESSIONS ───────────────
+    const postPatterns = await PostConflictSession.aggregate([
+      {
+        $match: {
+          userId,
+          status: "completed",
+          commonPatterns: { $exists: true, $ne: [] }
+        }
+      },
+      { $unwind: "$commonPatterns" },
+      {
+        $group: {
+          _id: "$commonPatterns",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const livePatterns = await LiveConflictSession.aggregate([
+      {
+        $match: {
+          userId,
+          status: "completed",
+          commonPatterns: { $exists: true, $ne: [] }
+        }
+      },
+      { $unwind: "$commonPatterns" },
+      {
+        $group: {
+          _id: "$commonPatterns",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Merge pattern counts
+    const patternMap = new Map();
+
+    [...postPatterns, ...livePatterns].forEach(p => {
+      const key = p._id;
+      patternMap.set(key, (patternMap.get(key) || 0) + p.count);
     });
 
-    const livePatterns = await LiveConflictSession.distinct('commonPatterns', {
-      userId: new mongoose.Types.ObjectId(userId),
-      status: 'completed',
-      commonPatterns: { $exists: true }
-    });
+    const commonPatterns = Array.from(patternMap.entries()).filter(
+      ([pattern, count]) => count > 1
+    );
 
-    // Combine and get unique count
-    const allPatterns = [...new Set([...postPatterns, ...livePatterns])];
-    const uniqueCommonPatternsCount = allPatterns.length;
+    const uniqueCommonPatternsCount = commonPatterns.length;
 
+    // ── RESPONSE ─────────────────────────────────────────
     res.json({
       success: true,
       stats: {
@@ -304,8 +341,11 @@ exports.getConflictStats = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('getConflictStats error:', error);
-    res.status(500).json({ success: false, message: 'Server error while fetching stats' });
+    console.error("getConflictStats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching stats"
+    });
   }
 };
 
@@ -314,91 +354,159 @@ exports.getTrendsAnalytics = async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.user.userId);
 
-    // ── 1. Completed sessions counts ─────────────────────────────────────────
-    const postCount = await PostConflictSession.countDocuments({
-      userId,
-      status: 'completed'
-    });
+    const { startDate, endDate } = req.body || {};
 
-    const liveCount = await LiveConflictSession.countDocuments({
-      userId,
-      status: 'completed'
-    });
+    let startUTC;
+    let endUTC;
 
-    // ── 2. Most Common Feelings (from post + live completed sessions) ────────
+    if (startDate && endDate) {
+      startUTC = new Date(startDate);
+      endUTC = new Date(endDate);
+      endUTC.setHours(23, 59, 59, 999);
+    } else {
+      endUTC = new Date();
+      startUTC = new Date();
+      startUTC.setDate(startUTC.getDate() - 7);
+    }
+
+    const baseFilter = {
+      userId,
+      status: "completed",
+      createdAt: {
+        $gte: startUTC,
+        $lte: endUTC
+      }
+    };
+
+    // ── MOST COMMON FEELINGS ─────────────────────────────
     const postFeelings = await PostConflictSession.aggregate([
-      { $match: { userId, status: 'completed' } },
-      { $unwind: '$presentFeelings' },
-      { $group: { _id: '$presentFeelings', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 10 }
+      { $match: baseFilter },
+      { $unwind: "$presentFeelings" },
+      { $group: { _id: "$presentFeelings", count: { $sum: 1 } } }
     ]);
 
     const liveFeelings = await LiveConflictSession.aggregate([
-      { $match: { userId, status: 'completed' } },
-      { $unwind: '$presentFeelings' },
-      { $group: { _id: '$presentFeelings', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 10 }
+      { $match: baseFilter },
+      { $unwind: "$presentFeelings" },
+      { $group: { _id: "$presentFeelings", count: { $sum: 1 } } }
     ]);
 
-    // Merge and get top feelings with total count
     const feelingMap = new Map();
+
     [...postFeelings, ...liveFeelings].forEach(f => {
       const key = f._id;
       feelingMap.set(key, (feelingMap.get(key) || 0) + f.count);
     });
 
     const mostCommonFeelings = Array.from(feelingMap.entries())
-      .map(([feeling, count]) => ({ feeling, times: count }))
-      .sort((a, b) => b.times - a.times)
-      .slice(0, 10); // top 10
-
-    // ── 3. Most Common Needs ─────────────────────────────────────────────────
-    const postNeeds = await PostConflictSession.aggregate([
-      { $match: { userId, status: 'completed' } },
-      { $unwind: '$desiredFeelings' },
-      { $group: { _id: '$desiredFeelings', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 10 }
-    ]);
-
-    const liveNeeds = await LiveConflictSession.aggregate([
-      { $match: { userId, status: 'completed' } },
-      { $unwind: '$desiredFeelings' },
-      { $group: { _id: '$desiredFeelings', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 10 }
-    ]);
-
-    const needMap = new Map();
-    [...postNeeds, ...liveNeeds].forEach(n => {
-      const key = n._id;
-      needMap.set(key, (needMap.get(key) || 0) + n.count);
-    });
-
-    const mostCommonNeeds = Array.from(needMap.entries())
-      .map(([need, count]) => ({ need, times: count }))
+      .map(([feeling, count]) => ({
+        feeling,
+        times: count
+      }))
       .sort((a, b) => b.times - a.times)
       .slice(0, 10);
 
-    // ── 4. Final response in the exact UI-like structure ─────────────────────
+    // ── MOST COMMON NEEDS ─────────────────────────────
+    const postNeeds = await PostConflictSession.aggregate([
+      { $match: baseFilter },
+      { $unwind: "$desiredFeelings" },
+      { $group: { _id: "$desiredFeelings", count: { $sum: 1 } } }
+    ]);
+
+    const liveNeeds = await LiveConflictSession.aggregate([
+      { $match: baseFilter },
+      { $unwind: "$desiredFeelings" },
+      { $group: { _id: "$desiredFeelings", count: { $sum: 1 } } }
+    ]);
+
+    const needsMap = new Map();
+
+    [...postNeeds, ...liveNeeds].forEach(n => {
+      const key = n._id;
+      needsMap.set(key, (needsMap.get(key) || 0) + n.count);
+    });
+
+    const mostCommonNeeds = Array.from(needsMap.entries())
+      .map(([need, count]) => ({
+        need,
+        times: count
+      }))
+      .sort((a, b) => b.times - a.times)
+      .slice(0, 10);
+
+    // ── CONFLICT COUNTS ─────────────────────────────
+    const postConflictCount = await PostConflictSession.countDocuments(baseFilter);
+    const liveConflictCount = await LiveConflictSession.countDocuments(baseFilter);
+
+    // ── RESPONSE ─────────────────────────────────────
     res.json({
       success: true,
       data: {
         mostCommonFeelings,
         mostCommonNeeds,
-        conflictTypes: {
-          liveConflicts: liveCount,
-          postReflections: postCount
-        }
+        postConflictCount,
+        liveConflictCount
       }
     });
+
   } catch (error) {
-    console.error('getTrendsAnalytics error:', error);
+    console.error("getTrendsAnalytics error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch conflict trends',
+      message: "Failed to fetch conflict trends",
+      error: error.message
+    });
+  }
+};
+
+exports.deleteConflict = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { type, sessionId } = req.body;
+
+    if (!type || !sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: "type and sessionId are required"
+      });
+    }
+
+    let deletedSession;
+
+    if (type === "live") {
+      deletedSession = await LiveConflictSession.findOneAndDelete({
+        _id: sessionId,
+        userId
+      });
+    } else if (type === "post") {
+      deletedSession = await PostConflictSession.findOneAndDelete({
+        _id: sessionId,
+        userId
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid conflict type"
+      });
+    }
+
+    if (!deletedSession) {
+      return res.status(404).json({
+        success: false,
+        message: "Conflict session not found or not authorized"
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Conflict session deleted successfully"
+    });
+
+  } catch (error) {
+    console.error("deleteConflict error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
       error: error.message
     });
   }

@@ -10,7 +10,7 @@ const { sendPushToUser } = require('../controllers/notificationController');
 const startWeeklyConflictReminder = () => {
 
   // Runs every Monday at 9 AM
-  cron.schedule('* * * * *', async () => {
+  cron.schedule('0 9 * * 1', async () => {
 
     console.log('Running weekly conflict reminder check...');
 
