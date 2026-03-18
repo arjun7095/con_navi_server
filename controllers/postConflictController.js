@@ -74,60 +74,63 @@ exports.updateStep2Feelings = async (req, res) => {
 };
 
 exports.updateStep3Reflection = async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const { reflection } = req.body;
-
-    if (!reflection) {
-      return res.status(400).json({
-        success: false,
-        message: 'reflection is required',
-      });
-    }
-
-    const { terms } = reflection;
-
-    if (!Array.isArray(terms)) {
-      return res.status(400).json({
-        success: false,
-        message: 'terms must be an array',
-      });
-    }
-
-    for (const term of terms) {
-      if (!term.option || !term.description) {
-        return res.status(400).json({
-          success: false,
-          message: 'Each term must have option and description',
-        });
-      }
-    }
-
-    const session = await PostConflictSession.findById(sessionId);
-    if (!session || session.userId.toString() !== req.user.userId) {
-      return res.status(404).json({ success: false, message: 'Session not found' });
-    }
-
-    session.step3 = {
-      experience: reflection.experience || '',
-      react: reflection.react || '',
-      assumption: reflection.assumption || '',
-      thoughts: reflection.thoughts || '',
-      understanding: reflection.understanding || '',
-      terms,
-    };
-
-    await session.save();
-
-    res.json({
-      success: true,
-      step3: session.step3,
-      nextStep: 4,
-    });
-
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+  try { 
+    const { sessionId } = req.params; 
+  const { reflection } = req.body; // the new nested structure 
+  // console.log('Received updateStep3 request:', reflection.terms ? terms count: "${reflection.terms.length}" : 'no terms'); // log terms info 
+  // // 1. Basic payload validation 
+  if (!reflection || typeof reflection !== 'object') { 
+    return res.status(400).json({ 
+      success: false, 
+      message: 'reflection object is required in the payload', 
+    }); 
   }
+  // 2. Validate named fields (optional – but good practice) 
+  const requiredTextFields = ['experience', 'react', 'assumption', 'thoughts', 'understanding']; 
+  for (const field of requiredTextFields) { 
+    if (typeof reflection[field] !== 'string' || reflection[field].trim() === '') { 
+      return res.status(400).json({ success: false, message: "${field} must be a non-empty string",
+
+      }); 
+    } 
+  } 
+    // 3. Validate terms array 
+  const { terms } = reflection; 
+  if (!Array.isArray(terms)) { 
+    return res.status(400).json({ 
+      success: false, 
+      message: 'terms must be an array',
+     }); 
+  } 
+  for (const term of terms) { 
+    if (!term.option || typeof term.option !== 'string' || term.option.trim() === '') { 
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Each term must have a non-empty "option" string', 
+      }); 
+    } 
+    if (!term.description || typeof term.description !== 'string' || term.description.trim() === '') { 
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Each term must have a non-empty "description" string', 
+      }); 
+    } 
+    // Any extra fields (str1, str2, note, priority, etc.) are allowed and ignored here 
+    } 
+    // 4. Find and authorize session 
+    const session = await PostConflictSession.findById(sessionId); 
+    if (!session || session.userId.toString() !== req.user.userId) { 
+      return res.status(404).json({ success: false, message: 'Session not found' }); } 
+    // 5. Update step3 with new structure 
+    session.step3 = { experience: reflection.experience || '', react: reflection.react || '', assumption: reflection.assumption || '', thoughts: reflection.thoughts || '', understanding: reflection.understanding || '', terms: terms || [], // array of objects with option + description + any extras
+    }; 
+    await session.save(); // 6. Return success response 
+    res.json({ success: true, step3: session.step3, nextStep: 4, message: 'Step 3 updated successfully', }); 
+  } 
+    catch (error) { 
+    console.error('updateStep3 error:', error); 
+    res.status(500).json({ success: false, message: 'Server error while updating step 3', error: error.message, }); 
+  } 
 };
 
 exports.updateStep4Rating = async (req, res) => {
