@@ -2,6 +2,11 @@
 const LiveConflictSession = require('../models/LiveConflictSession');
 // const { sendPushToUser } = require('./notificationController'); // if you have it; otherwise comment out
 const { cancelReminder } = require('../utils/scheduler');
+const { CONFLICT_SESSION_STATUS, isResumableConflictStatus } = require('../utils/conflictSessionStatus');
+const {
+  buildInterruptionReminderState,
+  clearInterruptionReminderState,
+} = require('../utils/interruptedConflictReminder');
 
 // Helper: Calculate distress category
 const getDistressCategory = (rating) => {
@@ -32,7 +37,7 @@ exports.createLiveSession = async (req, res) => {
 
     const session = new LiveConflictSession({
       userId,
-      status: 'active',
+      status: CONFLICT_SESSION_STATUS.ACTIVE,
       currentStep: 1,
     });
 
@@ -70,11 +75,11 @@ exports.updateStep = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Unauthorized access to session' });
     }
 
-    if (session.status === 'completed') {
+    if (session.status === CONFLICT_SESSION_STATUS.COMPLETED) {
       return res.status(400).json({ success: false, message: 'Session already completed' });
     }
 
-    if (session.status === 'paused') {
+    if (session.status === CONFLICT_SESSION_STATUS.PAUSED) {
       return res.status(400).json({
         success: false,
         message: 'Session is paused. Resume first.',
@@ -384,6 +389,8 @@ case 10: {
     }
 
     if (updated) {
+      session.status = CONFLICT_SESSION_STATUS.ACTIVE;
+      clearInterruptionReminderState(session);
       await session.save();
 
       res.json({
@@ -412,12 +419,13 @@ exports.pauseSession = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Session not found' });
     }
 
-    if (session.status === 'paused') {
+    if (session.status === CONFLICT_SESSION_STATUS.PAUSED) {
       return res.status(400).json({ success: false, message: 'Session already paused' });
     }
 
-    session.status = 'paused';
+    session.status = CONFLICT_SESSION_STATUS.PAUSED;
     session.pausedAt = new Date();
+    clearInterruptionReminderState(session);
 
     session.pauseHistory.push({
       pausedAt: new Date(),
@@ -465,7 +473,7 @@ exports.resumeSession = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Session not found' });
     }
 
-    if (session.status !== 'paused') {
+    if (session.status !== CONFLICT_SESSION_STATUS.PAUSED) {
       return res.status(400).json({ success: false, message: 'Session is not paused' });
     }
 
@@ -474,8 +482,10 @@ exports.resumeSession = async (req, res) => {
     cancelReminder(sessionId.toString());  // use string ID for safety
 
     // Resume the session
-    session.status = 'active';
+    session.status = CONFLICT_SESSION_STATUS.ACTIVE;
     session.resumedAt = new Date();
+    session.pausedAt = null;
+    clearInterruptionReminderState(session);
 
     // Update the last pause history entry
     const lastPause = session.pauseHistory[session.pauseHistory.length - 1];
@@ -511,7 +521,7 @@ exports.getUserSessions = async (req, res) => {
 
     const enhanced = sessions.map(s => ({
       ...s,
-      resumable: s.status === 'paused' || s.status === 'active',
+      resumable: isResumableConflictStatus(s.status),
     }));
 
     res.json({
@@ -540,7 +550,7 @@ exports.getSession = async (req, res) => {
     res.json({
       success: true,
       session,
-      resumable: session.status === 'paused' || session.status === 'active',
+      resumable: isResumableConflictStatus(session.status),
       currentStep: session.currentStep,
     });
   } catch (error) {
@@ -558,7 +568,7 @@ exports.completeSession = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Session not found' });
     }
 
-    if (session.status === 'completed') {
+    if (session.status === CONFLICT_SESSION_STATUS.COMPLETED) {
       return res.status(400).json({ success: false, message: 'Session already completed' });
     }
 
@@ -568,8 +578,9 @@ exports.completeSession = async (req, res) => {
 
     // Mark as completed
     session.isCompleted = true;
-    session.status = 'completed';
+    session.status = CONFLICT_SESSION_STATUS.COMPLETED;
     session.completedAt = new Date();
+    clearInterruptionReminderState(session);
 
     // Optional: calculate final duration if not already set
     if (session.startedAt && !session.totalDurationMinutes) {
@@ -592,6 +603,43 @@ exports.completeSession = async (req, res) => {
       success: false, 
       message: 'Failed to complete session', 
       error: error.message 
+    });
+  }
+};
+
+exports.markSessionInterrupted = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await LiveConflictSession.findById(sessionId);
+    if (!session || session.userId.toString() !== req.user.userId) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+
+    if (session.status === CONFLICT_SESSION_STATUS.COMPLETED) {
+      return res.status(400).json({ success: false, message: 'Completed sessions cannot be interrupted' });
+    }
+
+    const now = new Date();
+    session.status = CONFLICT_SESSION_STATUS.PAUSED;
+    session.pausedAt = now;
+    session.interruptionReminder = buildInterruptionReminderState(now);
+
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Live conflict session marked as interrupted',
+      sessionId: session._id,
+      status: session.status,
+      nextReminderAt: session.interruptionReminder.nextReminderAt,
+    });
+  } catch (error) {
+    console.error('markSessionInterrupted error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark session interrupted',
+      error: error.message,
     });
   }
 };

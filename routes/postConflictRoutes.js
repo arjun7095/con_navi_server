@@ -20,6 +20,7 @@ router.put('/:sessionId/step4', postConflictController.updateStep4Rating);
 
 // COMPLETE → STEP5
 router.put('/:sessionId/complete', postConflictController.completeSession);
+router.post('/:sessionId/exit', postConflictController.markSessionInterrupted);
 
 router.get('/:sessionId', postConflictController.getSessions);
 router.get('/:sessionId/resume', postConflictController.resumeSession);

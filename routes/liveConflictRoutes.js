@@ -4,11 +4,12 @@ const {
   createLiveSession,
   updateStep,
   pauseSession,
+  markSessionInterrupted,
   resumeSession,
   getUserSessions,
   getSession,
   completeSession,
-  getAllLiveConflictSessions,
+  // getAllLiveConflictSessions,
 } = require('../controllers/liveConflictController');
 
 const protect = require('../middleware/auth');
@@ -24,6 +25,9 @@ router.put('/:sessionId/step/:stepNumber', updateStep);
 
 // Pause session (any step)
 router.post('/:sessionId/pause', pauseSession);
+
+// App exit / unexpected interruption
+router.post('/:sessionId/exit', markSessionInterrupted);
 
 // Resume paused session
 router.post('/:sessionId/resume', resumeSession);

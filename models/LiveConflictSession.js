@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { CONFLICT_SESSION_STATUS } = require('../utils/conflictSessionStatus');
 
 const liveConflictSchema = new mongoose.Schema({
   userId: {
@@ -10,8 +11,8 @@ const liveConflictSchema = new mongoose.Schema({
 
   status: {
     type: String,
-    enum: ['active', 'paused', 'completed', 'abandoned'],
-    default: 'active',
+    enum: Object.values(CONFLICT_SESSION_STATUS),
+    default: CONFLICT_SESSION_STATUS.ACTIVE,
   },
 
   currentStep: {
@@ -102,6 +103,15 @@ const liveConflictSchema = new mongoose.Schema({
     resumedAt: Date,
   }],
 
+  interruptionReminder: {
+    isActive: { type: Boolean, default: false },
+    interruptedAt: { type: Date, default: null },
+    lastSentAt: { type: Date, default: null },
+    quickReminderCount: { type: Number, default: 0 },
+    totalReminderCount: { type: Number, default: 0 },
+    nextReminderAt: { type: Date, default: null },
+  },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -119,7 +129,7 @@ liveConflictSchema.pre('save', function (next) {
   }
 
   if (this.isCompleted) {
-    this.status = 'completed';
+    this.status = CONFLICT_SESSION_STATUS.COMPLETED;
     this.completedAt = new Date();
     if (this.startedAt) {
       this.totalDurationMinutes = Math.round((this.completedAt - this.startedAt) / (1000 * 60));

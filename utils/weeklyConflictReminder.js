@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const PostConflictSession = require('../models/PostConflictSession');
 const LiveConflictSession = require('../models/LiveConflictSession');
+const { CONFLICT_SESSION_STATUS } = require('./conflictSessionStatus');
 
 const { sendPushToUser } = require('../controllers/notificationController');
 
@@ -29,13 +30,13 @@ const startWeeklyConflictReminder = () => {
 
     const postCount = await PostConflictSession.countDocuments({
       userId,
-	status:'completed',
+	status: CONFLICT_SESSION_STATUS.COMPLETED,
       createdAt: { $gte: oneWeekAgo }
     });
 
     const liveCount = await LiveConflictSession.countDocuments({
       userId,
-	    status:'completed',
+	    status: CONFLICT_SESSION_STATUS.COMPLETED,
       startedAt: { $gte: oneWeekAgo }
     });
 
@@ -50,7 +51,11 @@ const startWeeklyConflictReminder = () => {
         userId,
         "Are you dealing with a conflict?",
         "You can resolve it by interacting with me. Start here.",
-        { type: "conflict_start" }
+        {
+          type: "conflict_start",
+          notificationContext: "weekly_reminder",
+          routeScreen: "ConflictHome",
+        }
       );
 
       console.log("Sent start conflict reminder to:", userId);
@@ -63,7 +68,11 @@ const startWeeklyConflictReminder = () => {
         userId,
         "Review your conflict trends",
         "You had conflict sessions last week. Check your emotional trends and insights.",
-        { type: "review_trends" }
+        {
+          type: "review_trends",
+          notificationContext: "weekly_reminder",
+          routeScreen: "ConflictTrends",
+        }
       );
 
       console.log("Sent trends review reminder to:", userId);

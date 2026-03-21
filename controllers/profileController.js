@@ -2,6 +2,7 @@ const User = require('../models/User');
 const PostConflictSession = require('../models/PostConflictSession');
 const LiveConflictSession = require('../models/LiveConflictSession');
 const mongoose = require('mongoose');
+const { CONFLICT_SESSION_STATUS } = require('../utils/conflictSessionStatus');
 // ──────────────────────────────────────────────────────────────
 // GET /api/profile/:userId
 // ──────────────────────────────────────────────────────────────
@@ -231,7 +232,7 @@ exports.getConflictStats = async (req, res) => {
       {
         $match: {
           userId,
-          status: "completed",
+          status: CONFLICT_SESSION_STATUS.COMPLETED,
           conflictTime: { $exists: true, $ne: null }
         }
       },
@@ -253,7 +254,7 @@ exports.getConflictStats = async (req, res) => {
       {
         $match: {
           userId,
-          status: "completed",
+          status: CONFLICT_SESSION_STATUS.COMPLETED,
           totalDurationMinutes: { $exists: true, $ne: null }
         }
       },
@@ -283,7 +284,7 @@ exports.getConflictStats = async (req, res) => {
       {
         $match: {
           userId,
-          status: "completed",
+          status: CONFLICT_SESSION_STATUS.COMPLETED,
           commonPatterns: { $exists: true, $ne: [] }
         }
       },
@@ -300,7 +301,7 @@ exports.getConflictStats = async (req, res) => {
       {
         $match: {
           userId,
-          status: "completed",
+          status: CONFLICT_SESSION_STATUS.COMPLETED,
           commonPatterns: { $exists: true, $ne: [] }
         }
       },
@@ -371,7 +372,7 @@ exports.getTrendsAnalytics = async (req, res) => {
 
     const baseFilter = {
       userId,
-      status: "completed",
+      status: CONFLICT_SESSION_STATUS.COMPLETED,
       createdAt: {
         $gte: startUTC,
         $lte: endUTC

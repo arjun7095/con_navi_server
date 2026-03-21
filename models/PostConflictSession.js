@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { CONFLICT_SESSION_STATUS } = require('../utils/conflictSessionStatus');
 
 const postConflictSessionSchema = new mongoose.Schema({
   userId: {
@@ -9,8 +10,8 @@ const postConflictSessionSchema = new mongoose.Schema({
 
   status: {
     type: String,
-    enum: ['draft', 'in_progress', 'completed'],
-    default: 'draft',
+    enum: Object.values(CONFLICT_SESSION_STATUS),
+    default: CONFLICT_SESSION_STATUS.ACTIVE,
   },
 
   // STEP 1 (unchanged)
@@ -53,8 +54,18 @@ const postConflictSessionSchema = new mongoose.Schema({
 
   conflictTime: { type: Number },
   startedAt: { type: Date, default: Date.now },
+  pausedAt: { type: Date },
+  resumedAt: { type: Date },
   completedAt: { type: Date },
   lastUpdatedAt: { type: Date, default: Date.now },
+  interruptionReminder: {
+    isActive: { type: Boolean, default: false },
+    interruptedAt: { type: Date, default: null },
+    lastSentAt: { type: Date, default: null },
+    quickReminderCount: { type: Number, default: 0 },
+    totalReminderCount: { type: Number, default: 0 },
+    nextReminderAt: { type: Date, default: null },
+  },
   createdAt: { type: Date, default: Date.now },
 
 }, { strict: false, timestamps: true });

@@ -1,10 +1,19 @@
 const PostConflictSession = require('../models/PostConflictSession');
 const { sendPushToUser } = require('./notificationController'); // assume you have this
+const { CONFLICT_SESSION_STATUS, isResumableConflictStatus } = require('../utils/conflictSessionStatus');
+const {
+  buildInterruptionReminderState,
+  clearInterruptionReminderState,
+} = require('../utils/interruptedConflictReminder');
+const { buildSessionNotificationData } = require('../utils/notificationRouting');
 
 exports.createSession = async (req, res) => {
   const userId = req.user.userId;  // from auth middleware
 
-  const session = new PostConflictSession({ userId, status: 'in_progress' });
+  const session = new PostConflictSession({
+    userId,
+    status: CONFLICT_SESSION_STATUS.ACTIVE,
+  });
   await session.save();
 
   res.status(201).json({
@@ -25,10 +34,11 @@ exports.updateStep1 = async (req, res) => {
 
   const session = await PostConflictSession.findById(sessionId);
   if (!session || session.userId.toString() !== req.user.userId) return res.status(404).json({ error: 'Session not found' });
-  if (session.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
+  if (session.status === CONFLICT_SESSION_STATUS.COMPLETED) return res.status(400).json({ error: 'Session already completed' });
 
   session.step1 = { rating, category };
-  session.status = 'in_progress';  // ensure
+  session.status = CONFLICT_SESSION_STATUS.ACTIVE;
+  clearInterruptionReminderState(session);
   await session.save();
 
   res.json({
@@ -59,6 +69,8 @@ exports.updateStep2Feelings = async (req, res) => {
       presentFeelings,
       desiredFeelings,
     };
+    session.status = CONFLICT_SESSION_STATUS.ACTIVE;
+    clearInterruptionReminderState(session);
 
     await session.save();
 
@@ -124,6 +136,8 @@ exports.updateStep3Reflection = async (req, res) => {
     // 5. Update step3 with new structure 
     session.step3 = { experience: reflection.experience || '', react: reflection.react || '', assumption: reflection.assumption || '', thoughts: reflection.thoughts || '', understanding: reflection.understanding || '', terms: terms || [], // array of objects with option + description + any extras
     }; 
+    session.status = CONFLICT_SESSION_STATUS.ACTIVE;
+    clearInterruptionReminderState(session);
     await session.save(); // 6. Return success response 
     res.json({ success: true, step3: session.step3, nextStep: 4, message: 'Step 3 updated successfully', }); 
   } 
@@ -154,6 +168,8 @@ exports.updateStep4Rating = async (req, res) => {
     const feedbackMessage = getFeedbackMessage(session.step1.rating, rating);
 
     session.step4 = { rating, category, feedbackMessage };
+    session.status = CONFLICT_SESSION_STATUS.ACTIVE;
+    clearInterruptionReminderState(session);
 
     await session.save();
 
@@ -184,8 +200,9 @@ exports.completeSession = async (req, res) => {
       });
     }
 
-    session.status = 'completed';
+    session.status = CONFLICT_SESSION_STATUS.COMPLETED;
     session.completedAt = new Date();
+    clearInterruptionReminderState(session);
 
     if (session.startedAt && !session.conflictTime) {
       session.conflictTime = Math.round(
@@ -194,7 +211,7 @@ exports.completeSession = async (req, res) => {
     }
 
     session.step5 = {
-      status: 'completed',
+      status: CONFLICT_SESSION_STATUS.COMPLETED,
     };
 
     await session.save();
@@ -236,7 +253,7 @@ exports.getSessions = async (req, res) => {
   res.json({
     success: true,
     session,
-    resumable: session.status !== 'completed',
+    resumable: isResumableConflictStatus(session.status),
     // nextStep: getNextStep(session),
   });
 };
@@ -247,13 +264,25 @@ exports.resumeSession = async (req, res) => {
 
   const session = await PostConflictSession.findOne({ _id: sessionId, userId: req.user.userId });
   if (!session) return res.status(404).json({ error: 'Session not found' });
-  if (session.status === 'completed') return res.status(400).json({ error: 'Session already completed' });
+  if (session.status === CONFLICT_SESSION_STATUS.COMPLETED) return res.status(400).json({ error: 'Session already completed' });
 
+  session.status = CONFLICT_SESSION_STATUS.ACTIVE;
+  session.resumedAt = new Date();
+  session.pausedAt = null;
   session.lastUpdatedAt = new Date();  // mark as active
+  clearInterruptionReminderState(session);
   await session.save();
 
   // Optional push: "Resuming your reflection – let's continue!"
-  await sendPushToUser(req.user.userId, 'Resume Reflection', 'Pick up where you left off in your post-conflict session.');
+  await sendPushToUser(
+    req.user.userId,
+    'Resume Reflection',
+    'Pick up where you left off in your post-conflict session.',
+    buildSessionNotificationData(session, 'post', {
+      type: 'session_resumed',
+      notificationContext: 'resume_session',
+    })
+  );
 
   res.json({
     success: true,
@@ -279,7 +308,7 @@ exports.getUserSessions = async (req, res) => {
 
     const enhanced = sessions.map(s => ({
       ...s,
-      resumable: s.status === 'paused' || s.status === 'active',
+      resumable: isResumableConflictStatus(s.status),
     }));
 
     res.json({
@@ -288,5 +317,42 @@ exports.getUserSessions = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+exports.markSessionInterrupted = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await PostConflictSession.findOne({
+      _id: sessionId,
+      userId: req.user.userId,
+    });
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+
+    if (session.status === CONFLICT_SESSION_STATUS.COMPLETED) {
+      return res.status(400).json({ success: false, message: 'Completed sessions cannot be interrupted' });
+    }
+
+    const now = new Date();
+    session.status = CONFLICT_SESSION_STATUS.PAUSED;
+    session.pausedAt = now;
+    session.interruptionReminder = buildInterruptionReminderState(now);
+
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Post-conflict session marked as interrupted',
+      sessionId: session._id,
+      status: session.status,
+      nextReminderAt: session.interruptionReminder.nextReminderAt,
+    });
+  } catch (error) {
+    console.error('markSessionInterrupted error:', error);
+    res.status(500).json({ success: false, message: 'Server error while marking session interrupted' });
   }
 };

@@ -1,6 +1,7 @@
 // src/controllers/notificationController.js
 const { getMessaging } = require('firebase-admin/messaging');
 const User = require('../models/User');
+const { serializeNotificationData } = require('../utils/notificationRouting');
 
 const messaging = getMessaging();
 
@@ -22,7 +23,7 @@ const sendPushToUser = async (userId, title, body, data = {}, dryRun = false) =>
     }
     const message = {
       notification: { title, body },
-      data,
+      data: serializeNotificationData(data),
       tokens: user.fcmTokens,
       android: { priority: 'high' },
       apns: {

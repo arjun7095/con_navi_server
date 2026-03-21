@@ -2,6 +2,8 @@
 const cron = require('node-cron');
 const { sendPushToUser } = require('../controllers/notificationController');
 const LiveConflictSession = require('../models/LiveConflictSession');
+const { CONFLICT_SESSION_STATUS } = require('./conflictSessionStatus');
+const { buildSessionNotificationData } = require('./notificationRouting');
 
 // In-memory store of scheduled jobs (key: sessionId, value: cron job instance)
 const scheduledReminders = new Map();
@@ -64,13 +66,21 @@ exports.scheduleReminder = async (userId, resumeAt, sessionId, message = 'It’s
             console.log(`Session ${sessionId} not found`);
             return;
           }
-          if (session.status !== 'paused') {
+          if (session.status !== CONFLICT_SESSION_STATUS.PAUSED) {
             console.log(`Session ${sessionId} no longer paused (status: ${session.status})`);
             return;
           }
 
           console.log(`Attempting resume push → user ${userId}, session ${sessionId}`);
-          const pushResult = await sendPushToUser(userId, 'Revisit Paused Conflict', message);
+          const pushResult = await sendPushToUser(
+            userId,
+            'Revisit Paused Conflict',
+            message,
+            buildSessionNotificationData(session, 'live', {
+              type: 'scheduled_resume_reminder',
+              notificationContext: 'manual_pause',
+            })
+          );
 
           if (pushResult.successCount > 0) {
             console.log(`Resume reminder sent successfully to user ${userId} (session ${sessionId})`);
