@@ -357,27 +357,21 @@ exports.getTrendsAnalytics = async (req, res) => {
 
     const { startDate, endDate } = req.body || {};
 
-    let startUTC;
-    let endUTC;
-
-    if (startDate && endDate) {
-      startUTC = new Date(startDate);
-      endUTC = new Date(endDate);
-      endUTC.setHours(23, 59, 59, 999);
-    } else {
-      endUTC = new Date();
-      startUTC = new Date();
-      startUTC.setDate(startUTC.getDate() - 7);
-    }
-
     const baseFilter = {
       userId,
       status: CONFLICT_SESSION_STATUS.COMPLETED,
-      createdAt: {
+    };
+
+    if (startDate && endDate) {
+      const startUTC = new Date(startDate);
+      const endUTC = new Date(endDate);
+      endUTC.setHours(23, 59, 59, 999);
+
+      baseFilter.createdAt = {
         $gte: startUTC,
         $lte: endUTC
-      }
-    };
+      };
+    }
 
     // ── MOST COMMON FEELINGS ─────────────────────────────
     const postFeelings = await PostConflictSession.aggregate([

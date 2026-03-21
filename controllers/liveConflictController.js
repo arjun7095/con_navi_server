@@ -307,17 +307,32 @@ case 9: {
 
   const { communicated } = req.body;
 
-  if (!communicated || typeof communicated !== 'string' || communicated.trim() === '') {
+  if (!Array.isArray(communicated) || communicated.length === 0) {
     return res.status(400).json({
       success: false,
-      message: 'communicated string is required',
+      message: 'communicated must be a non-empty array of strings',
     });
   }
 
-  currentCycle.listening.communicated = communicated.trim();
-  currentCycle.listening.timestamp = new Date();
+  const sanitizedCommunicated = communicated
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
-  // Mark listening complete
+  if (sanitizedCommunicated.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'communicated must contain at least one valid string',
+    });
+  }
+
+  currentCycle.listening.communicated = sanitizedCommunicated[sanitizedCommunicated.length - 1];
+  currentCycle.listening.timestamp = new Date();
+  currentCycle.listening.communicatedHistory = sanitizedCommunicated.map((text) => ({
+    text,
+    createdAt: new Date(),
+    selected: false,
+  }));
   currentCycle.isListeningComplete = true;
 
   // Check if cycle is now complete
