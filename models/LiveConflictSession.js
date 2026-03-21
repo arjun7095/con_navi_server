@@ -72,13 +72,7 @@ const liveConflictSchema = new mongoose.Schema({
     },
 
     listening: {
-      communicated: { type: String, trim: true },
-      communicatedHistory: [{
-        text: { type: String, trim: true, required: true },
-        createdAt: { type: Date, default: Date.now },
-        selected: { type: Boolean, default: false },
-      }],
-      selectedCommunication: { type: String, trim: true },
+      communicated: [{ type: String, trim: true }],
       timestamp: { type: Date, default: Date.now },
     },
 

@@ -326,13 +326,8 @@ case 9: {
     });
   }
 
-  currentCycle.listening.communicated = sanitizedCommunicated[sanitizedCommunicated.length - 1];
+  currentCycle.listening.communicated = sanitizedCommunicated;
   currentCycle.listening.timestamp = new Date();
-  currentCycle.listening.communicatedHistory = sanitizedCommunicated.map((text) => ({
-    text,
-    createdAt: new Date(),
-    selected: false,
-  }));
   currentCycle.isListeningComplete = true;
 
   // Check if cycle is now complete
