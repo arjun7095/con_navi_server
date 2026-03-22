@@ -15,6 +15,23 @@ function buildSessionNotificationData(session, conflictType, extras = {}) {
   };
 }
 
+function buildUnresolvedConflictsNotificationData({
+  postConflictCount = 0,
+  liveConflictCount = 0,
+  routeScreen = 'ConflictHome',
+  extras = {},
+} = {}) {
+  return {
+    type: 'unresolved_conflicts_reminder',
+    routeScreen,
+    notificationContext: 'weekly_unresolved_conflicts',
+    totalUnresolvedConflicts: postConflictCount + liveConflictCount,
+    postConflictCount,
+    liveConflictCount,
+    ...extras,
+  };
+}
+
 function getPostConflictCurrentStep(session) {
   if (!session.step1) return 1;
   if (!session.step2) return 2;
@@ -37,6 +54,7 @@ function serializeNotificationData(data = {}) {
 
 module.exports = {
   buildSessionNotificationData,
+  buildUnresolvedConflictsNotificationData,
   getPostConflictCurrentStep,
   serializeNotificationData,
 };

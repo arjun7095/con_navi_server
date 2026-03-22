@@ -8,6 +8,16 @@ const { buildSessionNotificationData } = require('./notificationRouting');
 // In-memory store of scheduled jobs (key: sessionId, value: cron job instance)
 const scheduledReminders = new Map();
 
+const formatResumeReminderMessage = (resumeDate) => {
+  const formattedDate = new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(resumeDate);
+
+  return `Hey, Time to resume your conflict on ${formattedDate}. You can continue or reschedule.`;
+};
+
 /**
  * Schedule a resume reminder push notification
  * @param {string} userId
@@ -15,7 +25,7 @@ const scheduledReminders = new Map();
  * @param {string} sessionId
  * @param {string} [message] - Custom message
  */
-exports.scheduleReminder = async (userId, resumeAt, sessionId, message = 'It’s time to continue your Live Conflict reflection!') => {
+exports.scheduleReminder = async (userId, resumeAt, sessionId, message) => {
   try {
     const resumeDate = new Date(resumeAt);
     if (isNaN(resumeDate.getTime())) {
@@ -52,6 +62,7 @@ exports.scheduleReminder = async (userId, resumeAt, sessionId, message = 'It’s
     }
 
     const cronExpression = `0 ${targetDate.getMinutes()} ${targetDate.getHours()} ${targetDate.getDate()} ${targetDate.getMonth() + 1} *`;
+    const reminderMessage = message || formatResumeReminderMessage(resumeDate);
 
     console.log(`Scheduling reminder for session ${sessionId} at ${targetDate.toISOString()} (server time)`);
 
@@ -75,7 +86,7 @@ exports.scheduleReminder = async (userId, resumeAt, sessionId, message = 'It’s
           const pushResult = await sendPushToUser(
             userId,
             'Revisit Paused Conflict',
-            message,
+            reminderMessage,
             buildSessionNotificationData(session, 'live', {
               type: 'scheduled_resume_reminder',
               notificationContext: 'manual_pause',

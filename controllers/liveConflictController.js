@@ -144,8 +144,7 @@ exports.updateStep = async (req, res) => {
               await scheduleReminder(
                 req.user.userId,
                 resumeDate,
-                sessionId,
-                'It’s time to continue your Live Conflict reflection!'
+                sessionId
               );
               session.resumeAt = resumeDate;
             } else {
@@ -450,8 +449,7 @@ exports.pauseSession = async (req, res) => {
         await scheduleReminder(
           req.user.userId,
           resumeDate,
-          sessionId,
-          'It’s time to continue your Live Conflict reflection!'
+          sessionId
         );
         session.resumeAt = resumeDate;
       } else {

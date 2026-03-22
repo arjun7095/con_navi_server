@@ -10,11 +10,66 @@ const QUICK_REMINDER_INTERVAL_MS = 5 * 60 * 1000;
 const DAILY_REMINDER_HOUR = 10;
 const DAILY_REMINDER_MINUTE = 0;
 
+function getCalendarDayKey(date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function getDaysSinceInterrupted(interruptedAt, now = new Date()) {
+  const interruptedDayStart = new Date(interruptedAt);
+  interruptedDayStart.setHours(0, 0, 0, 0);
+
+  const currentDayStart = new Date(now);
+  currentDayStart.setHours(0, 0, 0, 0);
+
+  return Math.floor((currentDayStart - interruptedDayStart) / (24 * 60 * 60 * 1000));
+}
+
 function getNextDayReminder(baseDate = new Date()) {
   const nextReminder = new Date(baseDate);
   nextReminder.setDate(nextReminder.getDate() + 1);
   nextReminder.setHours(DAILY_REMINDER_HOUR, DAILY_REMINDER_MINUTE, 0, 0);
   return nextReminder;
+}
+
+function getReminderContent(reminder, now = new Date()) {
+  const daysSinceInterrupted = getDaysSinceInterrupted(reminder.interruptedAt, now);
+
+  if (daysSinceInterrupted <= 0 && reminder.quickReminderCount < QUICK_REMINDER_LIMIT) {
+    return {
+      title: 'You have an unresolved conflict',
+      body: 'You left a conflict unresolved. Do you want to continue now?',
+    };
+  }
+
+  if (daysSinceInterrupted === 1) {
+    return {
+      title: 'Don’t leave this unresolved',
+      body: 'You still have a conflict waiting. Take a moment to continue or reschedule.',
+    };
+  }
+
+  return {
+    title: 'This conflict is still unresolved',
+    body: 'This hasn’t been resolved yet. Let’s come back and move it forward.',
+  };
+}
+
+function getNextReminderAt(reminder, now = new Date()) {
+  const interruptedAt = reminder.interruptedAt ? new Date(reminder.interruptedAt) : now;
+  const daysSinceInterrupted = getDaysSinceInterrupted(interruptedAt, now);
+  const nextQuickReminder = new Date(now.getTime() + QUICK_REMINDER_INTERVAL_MS);
+  const isStillInterruptionDay =
+    getCalendarDayKey(interruptedAt) === getCalendarDayKey(nextQuickReminder);
+
+  if (
+    daysSinceInterrupted <= 0 &&
+    reminder.quickReminderCount < QUICK_REMINDER_LIMIT &&
+    isStillInterruptionDay
+  ) {
+    return nextQuickReminder;
+  }
+
+  return getNextDayReminder(now);
 }
 
 function buildInterruptionReminderState(baseDate = new Date()) {
@@ -45,11 +100,8 @@ async function processSessionReminder(session, conflictType) {
     return;
   }
 
-  const title = 'Continue your conflict reflection';
-  const body =
-    reminder.quickReminderCount < QUICK_REMINDER_LIMIT
-      ? 'You left a conflict session in progress. Come back when you can and continue where you stopped.'
-      : 'Your unfinished conflict session is still waiting for you. Rejoin and continue your reflection.';
+  const now = new Date();
+  const { title, body } = getReminderContent(reminder, now);
 
   const pushResult = await sendPushToUser(
     session.userId,
@@ -65,18 +117,14 @@ async function processSessionReminder(session, conflictType) {
     return;
   }
 
-  const now = new Date();
   reminder.lastSentAt = now;
   reminder.totalReminderCount += 1;
 
-  if (reminder.quickReminderCount < QUICK_REMINDER_LIMIT) {
+  if (getDaysSinceInterrupted(reminder.interruptedAt, now) <= 0 && reminder.quickReminderCount < QUICK_REMINDER_LIMIT) {
     reminder.quickReminderCount += 1;
   }
 
-  reminder.nextReminderAt =
-    reminder.quickReminderCount < QUICK_REMINDER_LIMIT
-      ? new Date(now.getTime() + QUICK_REMINDER_INTERVAL_MS)
-      : getNextDayReminder(now);
+  reminder.nextReminderAt = getNextReminderAt(reminder, now);
 
   await session.save();
 }
@@ -117,5 +165,6 @@ module.exports = {
   buildInterruptionReminderState,
   clearInterruptionReminderState,
   getNextDayReminder,
+  getDaysSinceInterrupted,
   startInterruptedConflictReminder,
 };

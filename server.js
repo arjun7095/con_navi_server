@@ -5,6 +5,7 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const startWeeklyConflictReminder = require('./utils/weeklyConflictReminder');
 const { startInterruptedConflictReminder } = require('./utils/interruptedConflictReminder');
+const startUnresolvedConflictReminder = require('./utils/unresolvedConflictReminder');
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 connectDB();
 startWeeklyConflictReminder();
 startInterruptedConflictReminder();
+startUnresolvedConflictReminder();
 
 // Routes
 app.use('/api/auth', authRoutes);
