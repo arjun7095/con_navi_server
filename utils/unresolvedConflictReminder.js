@@ -17,7 +17,7 @@ function buildWeeklyUnresolvedMessage(totalUnresolvedConflicts) {
 const startUnresolvedConflictReminder = () => {
   // Every Monday at 10:00 AM IST
   cron.schedule(
-    '0 10 * * 1',
+    '* * * * *',
     async () => {
       console.log('Running unresolved conflict reminder check...');
 
