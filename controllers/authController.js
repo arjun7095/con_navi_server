@@ -2,6 +2,14 @@ const { auth } = require('../config/firebase');
 const User = require('../models/User');
 const { generateTokens } = require('../utils/jwt');
 
+// Phone numbers that are pre-approved as admins (comma-separated in ADMIN_WHITELIST env var)
+// e.g. ADMIN_WHITELIST=+919876543210,+919876543211
+const getAdminWhitelist = () =>
+  (process.env.ADMIN_WHITELIST || '')
+    .split(',')
+    .map(n => n.trim())
+    .filter(Boolean);
+
 exports.verifyPhoneAndRole = async (req, res) => {
   const { idToken, role, fcmToken } = req.body;
 
@@ -9,8 +17,9 @@ exports.verifyPhoneAndRole = async (req, res) => {
   if (!idToken) {
     return res.status(400).json({ success: false, message: "idToken is required" });
   }
-  if (!role || !['user', 'admin', 'moderator'].includes(role)) {
-    return res.status(400).json({ success: false, message: "Valid role required: user, admin, or moderator" });
+  // role is optional when the phone is on the admin whitelist; otherwise required
+  if (role && !['user', 'admin', 'moderator'].includes(role)) {
+    return res.status(400).json({ success: false, message: "Valid role: user, admin, or moderator" });
   }
 
   // Quick format sanity check (helps debug wrong token type early)
@@ -36,11 +45,20 @@ exports.verifyPhoneAndRole = async (req, res) => {
       return res.status(400).json({ success: false, message: "Phone number not found in token" });
     }
 
-    // Parse country code + mobile (your existing logic – can be improved later)
+    // Parse country code + mobile
     const countryCode = phoneNumber.startsWith('+') 
       ? phoneNumber.substring(0, phoneNumber.indexOf(phoneNumber.match(/\d/)[0])) 
       : '+';
     const mobile = phoneNumber.replace(countryCode, '');
+
+    // Auto-detect admin: if the full phone number is in the whitelist, force role to 'admin'
+    const adminWhitelist = getAdminWhitelist();
+    const isWhitelistedAdmin = adminWhitelist.includes(phoneNumber);
+    const resolvedRole = isWhitelistedAdmin ? 'admin' : (role || 'user');
+
+    if (!isWhitelistedAdmin && !role) {
+      return res.status(400).json({ success: false, message: "role is required (user or moderator)" });
+    }
 
     let user = await User.findOne({ $or: [{ firebaseUid }, { mobile }] });
     let isNewUser = false;
@@ -50,7 +68,7 @@ exports.verifyPhoneAndRole = async (req, res) => {
         firebaseUid,
         countryCode,
         mobile,
-        role,
+        role: resolvedRole,
         lastLogin: new Date(),
         fcmTokens: fcmToken ? [fcmToken] : []
       });
@@ -58,8 +76,10 @@ exports.verifyPhoneAndRole = async (req, res) => {
       isNewUser = true;
     } else {
       user.lastLogin = new Date();
-      // Only update role if you allow changes – otherwise remove this
-      // user.role = role;
+      // If the number is on the whitelist, always enforce admin role
+      if (isWhitelistedAdmin && user.role !== 'admin') {
+        user.role = 'admin';
+      }
       await user.save();
     }
 
@@ -86,7 +106,13 @@ exports.verifyPhoneAndRole = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    const nextAction = isNewUser || !user.isProfileComplete ? "CompleteProfile" : "UserDashboard";
+    const nextAction = isNewUser || !user.isProfileComplete
+      ? 'CompleteProfile'
+      : user.role === 'admin'
+        ? 'AdminDashboard'
+        : user.role === 'moderator'
+          ? 'ModeratorDashboard'
+          : 'UserDashboard';
 
     return res.json({
       success: true,
