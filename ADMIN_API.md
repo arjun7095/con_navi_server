@@ -77,7 +77,118 @@ If the phone number is in `ADMIN_WHITELIST`, the role is automatically forced to
 
 ---
 
-### 1. GET /api/admin/overview
+### 1. GET /api/admin/me
+
+Returns the authenticated admin's own profile details.
+
+**Query Params:** none
+
+**Response (200)**
+```json
+{
+  "success": true,
+  "data": {
+    "admin": {
+      "userId": "664abc123def456",
+      "countryCode": "+91",
+      "mobile": "9876543210",
+      "role": "admin",
+      "name": "John Admin",
+      "email": "john@example.com",
+      "avatar": "https://...",
+      "profileImageUrl": "https://...",
+      "notificationPreference": "all",
+      "dataAnalyticsEnabled": true,
+      "isProfileComplete": true,
+      "lastLogin": "2026-04-10T08:23:00.000Z",
+      "createdAt": "2026-01-15T10:00:00.000Z",
+      "updatedAt": "2026-04-20T09:15:00.000Z"
+    }
+  }
+}
+```
+
+---
+
+### 2. PUT /api/admin/me
+
+Updates the authenticated admin's own account details.
+
+**Request Body**
+```json
+{
+  "name": "John Admin",
+  "email": "john@example.com",
+  "avatar": "https://...",
+  "profileImageUrl": "https://...",
+  "notificationPreference": "important",
+  "dataAnalyticsEnabled": false
+}
+```
+
+**Allowed fields**
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | No | Must be a non-empty string |
+| `email` | string | No | Must be a valid email |
+| `avatar` | string | No | Accepts image URL or base64 string |
+| `profileImageUrl` | string | No | Accepts image URL or base64 string |
+| `notificationPreference` | string | No | `all`, `important`, or `none` |
+| `dataAnalyticsEnabled` | boolean | No | Enable or disable analytics collection |
+
+**Response (200)**
+```json
+{
+  "success": true,
+  "message": "Admin details updated successfully",
+  "data": {
+    "admin": {
+      "userId": "664abc123def456",
+      "countryCode": "+91",
+      "mobile": "9876543210",
+      "role": "admin",
+      "name": "John Admin",
+      "email": "john@example.com",
+      "avatar": "https://...",
+      "profileImageUrl": "https://...",
+      "notificationPreference": "important",
+      "dataAnalyticsEnabled": false,
+      "isProfileComplete": true,
+      "lastLogin": "2026-04-10T08:23:00.000Z",
+      "createdAt": "2026-01-15T10:00:00.000Z",
+      "updatedAt": "2026-04-20T09:20:00.000Z"
+    }
+  }
+}
+```
+
+**Response - Validation Error (400)**
+```json
+{
+  "success": false,
+  "message": "Invalid notificationPreference value"
+}
+```
+
+---
+
+### 3. DELETE /api/admin/me
+
+Deletes the authenticated admin account itself.
+
+**Query Params:** none
+
+**Response (200)**
+```json
+{
+  "success": true,
+  "message": "Admin account deleted successfully"
+}
+```
+
+---
+
+### 4. GET /api/admin/overview
 
 Dashboard summary — total users, active users, session counts.
 
@@ -119,7 +230,7 @@ Dashboard summary — total users, active users, session counts.
 
 ---
 
-### 2. GET /api/admin/users
+### 5. GET /api/admin/users
 
 Paginated user list with optional search and filters.
 
@@ -165,9 +276,9 @@ GET /api/admin/users?search=john&page=1&limit=10&profileComplete=true
 
 ---
 
-### 3. GET /api/admin/users/:userId
+### 6. GET /api/admin/users/:userId
 
-Full detail for a single user including session stats and recent sessions.
+Full detail for a single user including session stats and all sessions.
 
 **URL Params**
 | Param | Description |
@@ -213,10 +324,18 @@ GET /api/admin/users/664abc123def456
         "paused": 1,
         "abandoned": 1,
         "active": 0
+      },
+      "combined": {
+        "total": 19,
+        "completed": 14,
+        "paused": 3,
+        "abandoned": 2,
+        "active": 0
       }
     },
-    "recentLiveSessions": [ /* last 10 live sessions */ ],
-    "recentPostSessions": [ /* last 10 post sessions */ ]
+    "totalSessions": 19,
+    "allLiveSessions": [ /* all live sessions for this user */ ],
+    "allPostSessions": [ /* all post sessions for this user */ ]
   }
 }
 ```
@@ -231,7 +350,7 @@ GET /api/admin/users/664abc123def456
 
 ---
 
-### 4. GET /api/admin/analytics/time
+### 7. GET /api/admin/analytics/time
 
 Time-based usage analytics — busiest days, busiest hours, monthly trend.  
 Works for all users combined or filtered to one specific user.
@@ -285,7 +404,7 @@ GET /api/admin/analytics/time?userId=664abc123def456
 
 ---
 
-### 5. GET /api/admin/analytics/sessions
+### 8. GET /api/admin/analytics/sessions
 
 Session analytics — status breakdown, feelings frequency, conflict keyword extraction.  
 Keywords are extracted from conversation text (speaking/listening cycles for live sessions; step 3 reflections for post sessions). Common English words are filtered out automatically.
@@ -362,7 +481,7 @@ GET /api/admin/analytics/sessions?userId=664abc123def456&sessionType=live
 
 ---
 
-### 6. POST /api/admin/notifications/send
+### 9. POST /api/admin/notifications/send
 
 Send an on-demand push notification to a specific user.  
 Optionally include the user's session stats as notification data payload (for the frontend to display).
@@ -425,7 +544,7 @@ Optionally include the user's session stats as notification data payload (for th
 
 ---
 
-### 7. POST /api/admin/notifications/monthly
+### 10. POST /api/admin/notifications/monthly
 
 Send personalised monthly summary push notifications to **all users** who have a registered device token.  
 Stats are calculated from the **previous calendar month**.
@@ -469,7 +588,7 @@ Stats are calculated from the **previous calendar month**.
 
 ---
 
-### 8. POST /api/admin/email/send
+### 11. POST /api/admin/email/send
 
 Send a plain email (written by admin) to a specific user. No session data is included — the content is entirely what the admin types.
 

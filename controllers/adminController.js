@@ -4,6 +4,9 @@ const LiveConflictSession = require('../models/LiveConflictSession');
 const PostConflictSession = require('../models/PostConflictSession');
 const { sendPushToUser } = require('./notificationController');
 const { sendEmail } = require('../utils/emailService');
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const BASE64_IMAGE_REGEX = /^[A-Za-z0-9+/=]+$/;
+const IMAGE_DATA_URI_REGEX = /^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/;
 
 // ─── Keyword Extraction ──────────────────────────────────────────────────────────
 
@@ -86,6 +89,236 @@ function buildDateFilter(startDate, endDate) {
   if (endDate) filter.createdAt.$lte = new Date(endDate);
   return filter;
 }
+
+function buildAdminProfile(admin) {
+  return {
+    userId: admin._id.toString(),
+    countryCode: admin.countryCode,
+    mobile: admin.mobile,
+    role: admin.role,
+    name: admin.name,
+    email: admin.email,
+    avatar: admin.avatar,
+    profileImageUrl: admin.profileImageUrl,
+    notificationPreference: admin.notificationPreference,
+    dataAnalyticsEnabled: admin.dataAnalyticsEnabled,
+    isProfileComplete: admin.isProfileComplete,
+    lastLogin: admin.lastLogin,
+    createdAt: admin.createdAt,
+    updatedAt: admin.updatedAt,
+  };
+}
+
+function calculateProfileCompleteness(user) {
+  return !!(
+    user.name &&
+    user.email &&
+    (user.avatar || user.profileImageUrl) &&
+    user.notificationPreference
+  );
+}
+
+function isValidImageValue(value) {
+  if (typeof value !== 'string') return false;
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return false;
+
+  try {
+    const parsedUrl = new URL(trimmedValue);
+    if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+      return true;
+    }
+  } catch (_) {
+    // Continue to base64 validation.
+  }
+
+  if (IMAGE_DATA_URI_REGEX.test(trimmedValue)) return true;
+
+  return BASE64_IMAGE_REGEX.test(trimmedValue) && trimmedValue.length >= 20;
+}
+
+// GET /api/admin/me
+exports.getAdminSelf = async (req, res) => {
+  try {
+    const admin = await User.findOne({
+      _id: req.user.userId,
+      role: 'admin',
+    }).select('-refreshTokens -fcmTokens');
+
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        admin: buildAdminProfile(admin),
+      },
+    });
+  } catch (err) {
+    console.error('getAdminSelf error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// PUT /api/admin/me
+exports.updateAdminSelf = async (req, res) => {
+  try {
+    const allowedFields = [
+      'name',
+      'email',
+      'avatar',
+      'profileImageUrl',
+      'notificationPreference',
+      'dataAnalyticsEnabled',
+    ];
+
+    const updates = {};
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    });
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide at least one valid field to update',
+      });
+    }
+
+    if (updates.name !== undefined) {
+      if (typeof updates.name !== 'string' || !updates.name.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'name must be a non-empty string',
+        });
+      }
+      updates.name = updates.name.trim();
+    }
+
+    if (updates.email !== undefined) {
+      if (typeof updates.email !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'email must be a string',
+        });
+      }
+
+      updates.email = updates.email.trim().toLowerCase();
+      if (!EMAIL_REGEX.test(updates.email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email address',
+        });
+      }
+    }
+
+    if (
+      updates.notificationPreference !== undefined &&
+      !['all', 'important', 'none'].includes(updates.notificationPreference)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid notificationPreference value',
+      });
+    }
+
+    if (
+      updates.dataAnalyticsEnabled !== undefined &&
+      typeof updates.dataAnalyticsEnabled !== 'boolean'
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'dataAnalyticsEnabled must be a boolean',
+      });
+    }
+
+    if (updates.avatar !== undefined && !isValidImageValue(updates.avatar)) {
+      return res.status(400).json({
+        success: false,
+        message: 'avatar must be a valid image URL or base64 string',
+      });
+    }
+
+    if (
+      updates.profileImageUrl !== undefined &&
+      !isValidImageValue(updates.profileImageUrl)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'profileImageUrl must be a valid image URL or base64 string',
+      });
+    }
+
+    const admin = await User.findOne({
+      _id: req.user.userId,
+      role: 'admin',
+    });
+
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    Object.assign(admin, updates);
+    admin.isProfileComplete = calculateProfileCompleteness(admin);
+    await admin.save();
+
+    return res.json({
+      success: true,
+      message: 'Admin details updated successfully',
+      data: {
+        admin: buildAdminProfile(admin),
+      },
+    });
+  } catch (err) {
+    console.error('updateAdminSelf error:', err);
+
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Duplicate value (for example email already exists)',
+      });
+    }
+
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// DELETE /api/admin/me
+exports.deleteAdminSelf = async (req, res) => {
+  try {
+    const admin = await User.findOne({
+      _id: req.user.userId,
+      role: 'admin',
+    }).select('_id');
+
+    if (!admin) {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    await Promise.all([
+      User.deleteOne({ _id: admin._id }),
+      LiveConflictSession.deleteMany({ userId: admin._id }),
+      PostConflictSession.deleteMany({ userId: admin._id }),
+    ]);
+
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+
+    return res.json({
+      success: true,
+      message: 'Admin account deleted successfully',
+    });
+  } catch (err) {
+    console.error('deleteAdminSelf error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
 
 
 // ─── 1. Dashboard Overview ───────────────────────────────────────────────────────
@@ -231,9 +464,11 @@ exports.getUserDetail = async (req, res) => {
         sessionStats: {
           live: buildStatusStats(liveSessions),
           post: buildStatusStats(postSessions),
+          combined: buildStatusStats([...liveSessions, ...postSessions]),
         },
-        recentLiveSessions: liveSessions.slice(0, 10),
-        recentPostSessions: postSessions.slice(0, 10),
+        totalSessions: liveSessions.length + postSessions.length,
+        allLiveSessions: liveSessions,
+        allPostSessions: postSessions,
       },
     });
   } catch (err) {

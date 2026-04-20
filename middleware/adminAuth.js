@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
 const adminAuth = async (req, res, next) => {
   let token;
@@ -28,10 +29,19 @@ const adminAuth = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Admin access required' });
     }
 
+    const adminUser = await User.findOne({
+      _id: decoded.userId,
+      role: 'admin',
+    }).select('_id mobile role');
+
+    if (!adminUser) {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
     req.user = {
-      userId: decoded.userId,
-      mobile: decoded.mobile,
-      role: decoded.role,
+      userId: adminUser._id.toString(),
+      mobile: adminUser.mobile,
+      role: adminUser.role,
     };
 
     next();

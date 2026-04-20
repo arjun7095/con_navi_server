@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const adminAuth = require('../middleware/adminAuth');
 const {
+  getAdminSelf,
+  updateAdminSelf,
+  deleteAdminSelf,
   getOverview,
   getUserList,
   getUserDetail,
@@ -14,6 +17,18 @@ const {
 
 // All admin routes require a valid admin JWT
 router.use(adminAuth);
+
+// GET /api/admin/me
+// Return the authenticated admin's own account details
+router.get('/me', getAdminSelf);
+
+// PUT /api/admin/me
+// Update the authenticated admin's own account details
+router.put('/me', updateAdminSelf);
+
+// DELETE /api/admin/me
+// Delete the authenticated admin's own account
+router.delete('/me', deleteAdminSelf);
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 // GET /api/admin/overview
