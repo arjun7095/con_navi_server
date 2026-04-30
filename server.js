@@ -6,6 +6,7 @@ const authRoutes = require('./routes/authRoutes');
 const startWeeklyConflictReminder = require('./utils/weeklyConflictReminder');
 const { startInterruptedConflictReminder } = require('./utils/interruptedConflictReminder');
 const startUnresolvedConflictReminder = require('./utils/unresolvedConflictReminder');
+const startMonthlyAdminReportScheduler = require('./utils/monthlyAdminReportScheduler');
 
 const app = express();
 
@@ -19,6 +20,7 @@ connectDB();
 startWeeklyConflictReminder();
 startInterruptedConflictReminder();
 startUnresolvedConflictReminder();
+startMonthlyAdminReportScheduler();
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -34,3 +36,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
 });
+
