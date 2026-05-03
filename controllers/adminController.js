@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const PDFDocument = require('pdfkit');
 const User = require('../models/User');
 const LiveConflictSession = require('../models/LiveConflictSession');
 const PostConflictSession = require('../models/PostConflictSession');
@@ -114,6 +115,52 @@ function formatMonthKey(date) {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, '0');
   return `${y}-${m}`;
+}
+
+function buildSelectedSessionsPdfBuffer({ userId, totalCount, liveCount, postCount, sessions }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const chunks = [];
+    doc.on('data', chunk => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(18).text('ConNavi Selected Session Report', { underline: true });
+    doc.moveDown(0.6);
+    doc.fontSize(11).text(`Generated At (UTC): ${new Date().toISOString()}`);
+    doc.text(`User ID: ${String(userId)}`);
+    doc.text(`Total Selected Sessions: ${totalCount}`);
+    doc.text(`Live Sessions: ${liveCount}`);
+    doc.text(`Post Sessions: ${postCount}`);
+    doc.moveDown(1);
+
+    doc.fontSize(12).text('Session Details');
+    doc.moveDown(0.4);
+
+    const headerY = doc.y;
+    doc.fontSize(10).text('Session ID', 40, headerY);
+    doc.text('Type', 255, headerY);
+    doc.text('Status', 320, headerY);
+    doc.text('Created At (UTC)', 390, headerY);
+    doc.moveTo(40, headerY + 14).lineTo(555, headerY + 14).stroke();
+    doc.moveDown(0.8);
+
+    if (!sessions.length) {
+      doc.fontSize(10).text('No selected sessions found.');
+    } else {
+      sessions.forEach(session => {
+        const rowY = doc.y;
+        const createdAt = session.createdAt || 'N/A';
+        doc.fontSize(9).text(String(session.sessionId), 40, rowY, { width: 205, ellipsis: true });
+        doc.text(String(session.type || '').toUpperCase(), 255, rowY, { width: 55 });
+        doc.text(String(session.status || 'unknown'), 320, rowY, { width: 65 });
+        doc.text(String(createdAt), 390, rowY, { width: 165, ellipsis: true });
+        doc.moveDown(1.1);
+      });
+    }
+
+    doc.end();
+  });
 }
 
 async function buildDetailedSessionNotificationData(userId, sessionSelection = {}) {
@@ -854,49 +901,20 @@ exports.sendEmailToUser = async (req, res) => {
             .join('')
         : `<tr><td colspan="4">No selected sessions found.</td></tr>`;
 
-      const docContent = `
-        <html>
-          <head>
-            <meta charset="utf-8" />
-            <style>
-              body { font-family: Arial, sans-serif; color: #111827; }
-              h1 { font-size: 22px; margin-bottom: 8px; }
-              .meta { margin: 6px 0; font-size: 13px; }
-              table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-              th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 12px; text-align: left; }
-              th { background: #f3f4f6; }
-            </style>
-          </head>
-          <body>
-            <h1>ConNavi Selected Session Report</h1>
-            <div class="meta"><strong>Generated At (UTC):</strong> ${escapeHtml(new Date().toISOString())}</div>
-            <div class="meta"><strong>User ID:</strong> ${escapeHtml(String(userId))}</div>
-            <div class="meta"><strong>Total Selected Sessions:</strong> ${totalCount}</div>
-            <div class="meta"><strong>Live Sessions:</strong> ${liveCount}</div>
-            <div class="meta"><strong>Post Sessions:</strong> ${postCount}</div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Session ID</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Created At (UTC)</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${tableRows}
-              </tbody>
-            </table>
-          </body>
-        </html>
-      `;
+      const pdfBuffer = await buildSelectedSessionsPdfBuffer({
+        userId,
+        totalCount,
+        liveCount,
+        postCount,
+        sessions: allSessions,
+      });
 
-      const reportFileName = `selected-sessions-${String(userId)}-${Date.now()}.doc`;
+      const reportFileName = `selected-sessions-${String(userId)}-${Date.now()}.pdf`;
       emailAttachments = [
         {
           filename: reportFileName,
-          content: docContent,
-          contentType: 'application/msword',
+          content: pdfBuffer,
+          contentType: 'application/pdf',
         },
       ];
 
