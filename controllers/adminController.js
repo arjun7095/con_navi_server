@@ -831,21 +831,40 @@ exports.sendEmailToUser = async (req, res) => {
         'ConNavi Admin Team',
       ].join('\n');
 
-      const reportPayload = {
-        generatedAt: new Date().toISOString(),
-        userId: String(userId),
-        totalSelectedSessions: totalCount,
-        liveSessionCount: liveCount,
-        postSessionCount: postCount,
-        sessions: [...summarizedLive, ...summarizedPost],
-      };
+      const allSessions = [...summarizedLive, ...summarizedPost];
+      const pad = (value, width) => String(value ?? '').padEnd(width, ' ');
+      const divider = '-'.repeat(108);
+      const rows = allSessions.length
+        ? allSessions
+            .map(s =>
+              `${pad(s.sessionId, 34)} | ${pad((s.type || '').toUpperCase(), 6)} | ${pad(s.status || 'unknown', 12)} | ${pad(s.createdAt || 'N/A', 36)}`
+            )
+            .join('\n')
+        : 'No selected sessions found.';
 
-      const reportFileName = `selected-sessions-${String(userId)}-${Date.now()}.json`;
+      const docContent = [
+        'ConNavi Selected Session Report',
+        divider,
+        `Generated At (UTC): ${new Date().toISOString()}`,
+        `User ID: ${String(userId)}`,
+        `Total Selected Sessions: ${totalCount}`,
+        `Live Sessions: ${liveCount}`,
+        `Post Sessions: ${postCount}`,
+        '',
+        'Session Details',
+        divider,
+        `${pad('Session ID', 34)} | ${pad('Type', 6)} | ${pad('Status', 12)} | ${pad('Created At (UTC)', 36)}`,
+        divider,
+        rows,
+        divider,
+      ].join('\n');
+
+      const reportFileName = `selected-sessions-${String(userId)}-${Date.now()}.doc`;
       emailAttachments = [
         {
           filename: reportFileName,
-          content: JSON.stringify(reportPayload, null, 2),
-          contentType: 'application/json',
+          content: docContent,
+          contentType: 'application/msword',
         },
       ];
 
