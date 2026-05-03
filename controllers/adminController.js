@@ -116,6 +116,21 @@ function formatMonthKey(date) {
   return `${y}-${m}`;
 }
 
+async function buildDetailedSessionNotificationData(userId) {
+  const [liveSessions, postSessions] = await Promise.all([
+    LiveConflictSession.find({ userId }).sort({ createdAt: -1 }).lean(),
+    PostConflictSession.find({ userId }).sort({ createdAt: -1 }).lean(),
+  ]);
+
+  return {
+    type: 'admin_report_detailed',
+    live_session_count: String(liveSessions.length),
+    post_session_count: String(postSessions.length),
+    live_sessions: JSON.stringify(liveSessions),
+    post_sessions: JSON.stringify(postSessions),
+  };
+}
+
 async function getOrCreateAdminSettings() {
   let settings = await AdminSettings.findOne({ key: 'default' });
   if (!settings) {
@@ -631,7 +646,9 @@ exports.sendNotificationToUser = async (req, res) => {
       let failureCount = 0;
 
       for (const user of users) {
-        const notificationData = { type: includeReport ? 'admin_report' : 'admin_notification' };
+        const notificationData = includeReport
+          ? await buildDetailedSessionNotificationData(user._id)
+          : { type: 'admin_notification' };
         const result = await sendPushToUser(user._id.toString(), title, body, notificationData);
         if (result.successCount > 0) successCount += 1;
         else failureCount += 1;
@@ -644,21 +661,9 @@ exports.sendNotificationToUser = async (req, res) => {
     const user = await User.findById(userId).select('name email fcmTokens');
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    let notificationData = { type: 'admin_notification' };
-    if (includeReport) {
-      const [liveSessions, postSessions] = await Promise.all([LiveConflictSession.find({ userId }), PostConflictSession.find({ userId })]);
-      const liveStats = buildStatusStats(liveSessions);
-      const postStats = buildStatusStats(postSessions);
-      notificationData = {
-        type: 'admin_report',
-        live_completed: String(liveStats.completed),
-        live_paused: String(liveStats.paused),
-        live_abandoned: String(liveStats.abandoned),
-        post_completed: String(postStats.completed),
-        post_paused: String(postStats.paused),
-        post_abandoned: String(postStats.abandoned),
-      };
-    }
+    const notificationData = includeReport
+      ? await buildDetailedSessionNotificationData(userId)
+      : { type: 'admin_notification' };
 
     const result = await sendPushToUser(userId, title, body, notificationData);
     return res.json({ success: true, message: 'Notification sent', result });

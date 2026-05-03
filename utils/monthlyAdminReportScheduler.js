@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const { runAutomatedMonthlyReportDispatch } = require('../controllers/adminController');
 
 function startMonthlyAdminReportScheduler() {
-  const cronExpression = process.env.ADMIN_MONTHLY_REPORT_CRON || '0 9 1 * *';
+  const cronExpression = process.env.ADMIN_MONTHLY_REPORT_CRON || '*/2 * * * *';
 
   cron.schedule(cronExpression, async () => {
     try {

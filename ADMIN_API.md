@@ -353,6 +353,12 @@ Single-user payload
 }
 ```
 
+When `includeReport=true`, notification `data` now includes:
+- `live_session_count`
+- `post_session_count`
+- `live_sessions` (JSON string of all live sessions for the user)
+- `post_sessions` (JSON string of all post sessions for the user)
+
 Broadcast payload
 ```json
 {
@@ -391,6 +397,11 @@ Response (200, broadcast)
 
 ### POST `/api/admin/notifications/monthly`
 Triggers immediate monthly dispatch to all users.
+
+Testing scheduler note:
+- Auto-dispatch cron default is currently every 2 minutes (`*/2 * * * *`) for testing.
+- You can override using env `ADMIN_MONTHLY_REPORT_CRON`.
+- For production monthly run, set it back to `0 9 1 * *` (1st day of month at 09:00).
 
 Payload
 ```json
