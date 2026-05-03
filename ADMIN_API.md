@@ -349,7 +349,9 @@ Single-user payload
   "userId": "664abc123def456",
   "title": "Your trend update",
   "body": "Here is your latest summary.",
-  "includeReport": true
+  "includeReport": true,
+  "sessionIds": ["665b11111111111111111111"],
+  "includeAllSessions": false
 }
 ```
 
@@ -358,6 +360,11 @@ When `includeReport=true`, notification `data` now includes:
 - `post_session_count`
 - `live_sessions` (JSON string of all live sessions for the user)
 - `post_sessions` (JSON string of all post sessions for the user)
+
+Selection behavior:
+- If `sessionIds` contains one ID: sends that single session (live or post, whichever matches).
+- If `sessionIds` contains multiple IDs: sends only those matched sessions.
+- If `includeAllSessions=true`: ignores `sessionIds` and sends all user sessions.
 
 Broadcast payload
 ```json

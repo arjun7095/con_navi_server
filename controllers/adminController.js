@@ -116,18 +116,34 @@ function formatMonthKey(date) {
   return `${y}-${m}`;
 }
 
-async function buildDetailedSessionNotificationData(userId) {
+async function buildDetailedSessionNotificationData(userId, sessionSelection = {}) {
+  const { sessionIds = [], includeAllSessions = false } = sessionSelection;
+  const normalizedIds = Array.isArray(sessionIds)
+    ? sessionIds.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id))
+    : [];
+
+  const liveQuery = { userId };
+  const postQuery = { userId };
+
+  if (!includeAllSessions && normalizedIds.length) {
+    liveQuery._id = { $in: normalizedIds };
+    postQuery._id = { $in: normalizedIds };
+  }
+
   const [liveSessions, postSessions] = await Promise.all([
-    LiveConflictSession.find({ userId }).sort({ createdAt: -1 }).lean(),
-    PostConflictSession.find({ userId }).sort({ createdAt: -1 }).lean(),
+    LiveConflictSession.find(liveQuery).sort({ createdAt: -1 }).lean(),
+    PostConflictSession.find(postQuery).sort({ createdAt: -1 }).lean(),
   ]);
 
   return {
     type: 'admin_report_detailed',
+    selected_session_ids_count: String(normalizedIds.length),
     live_session_count: String(liveSessions.length),
     post_session_count: String(postSessions.length),
     live_sessions: JSON.stringify(liveSessions),
     post_sessions: JSON.stringify(postSessions),
+    _selectedLiveSessions: liveSessions,
+    _selectedPostSessions: postSessions,
   };
 }
 
@@ -635,7 +651,15 @@ exports.getDurationAnalytics = async (req, res) => {
 
 exports.sendNotificationToUser = async (req, res) => {
   try {
-    const { userId, audience, title, body, includeReport = false } = req.body;
+    const {
+      userId,
+      audience,
+      title,
+      body,
+      includeReport = false,
+      sessionIds = [],
+      includeAllSessions = false,
+    } = req.body;
     if (!title || !body) return res.status(400).json({ success: false, message: 'title and body are required' });
 
     const isBroadcast = audience === 'all' || userId === 'all';
@@ -647,8 +671,10 @@ exports.sendNotificationToUser = async (req, res) => {
 
       for (const user of users) {
         const notificationData = includeReport
-          ? await buildDetailedSessionNotificationData(user._id)
+          ? await buildDetailedSessionNotificationData(user._id, { sessionIds, includeAllSessions })
           : { type: 'admin_notification' };
+        if (notificationData._selectedLiveSessions) delete notificationData._selectedLiveSessions;
+        if (notificationData._selectedPostSessions) delete notificationData._selectedPostSessions;
         const result = await sendPushToUser(user._id.toString(), title, body, notificationData);
         if (result.successCount > 0) successCount += 1;
         else failureCount += 1;
@@ -662,11 +688,23 @@ exports.sendNotificationToUser = async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     const notificationData = includeReport
-      ? await buildDetailedSessionNotificationData(userId)
+      ? await buildDetailedSessionNotificationData(userId, { sessionIds, includeAllSessions })
       : { type: 'admin_notification' };
 
     const result = await sendPushToUser(userId, title, body, notificationData);
-    return res.json({ success: true, message: 'Notification sent', result });
+    const responseData = includeReport
+      ? {
+          selectedSessions: {
+            live: notificationData._selectedLiveSessions || [],
+            post: notificationData._selectedPostSessions || [],
+          },
+        }
+      : undefined;
+
+    if (notificationData._selectedLiveSessions) delete notificationData._selectedLiveSessions;
+    if (notificationData._selectedPostSessions) delete notificationData._selectedPostSessions;
+
+    return res.json({ success: true, message: 'Notification sent', result, data: responseData });
   } catch (err) {
     console.error('sendNotificationToUser error:', err);
     return res.status(500).json({ success: false, message: 'Server error' });
