@@ -741,7 +741,15 @@ exports.sendMonthlyNotificationsToAll = async (req, res) => {
 
 exports.sendEmailToUser = async (req, res) => {
   try {
-    const { userId, audience, subject, message } = req.body;
+    const {
+      userId,
+      audience,
+      subject,
+      message,
+      includeReport = false,
+      sessionIds = [],
+      includeAllSessions = false,
+    } = req.body;
     if (!subject || !message) return res.status(400).json({ success: false, message: 'subject and message are required' });
 
     const isBroadcast = audience === 'all' || userId === 'all';
@@ -765,12 +773,143 @@ exports.sendEmailToUser = async (req, res) => {
 
     if (!userId) return res.status(400).json({ success: false, message: 'userId is required when audience is not all' });
 
-    const user = await User.findById(userId).select('email');
+    const user = await User.findById(userId).select('email name');
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     if (!user.email) return res.status(400).json({ success: false, message: 'This user has no email address on record' });
 
-    await sendEmail({ to: user.email, subject, text: message });
-    return res.json({ success: true, message: `Email sent to ${user.email}` });
+    let emailBody = message;
+    let emailHtml = null;
+    let selectedSessions = { live: [], post: [] };
+
+    if (includeReport) {
+      const sessionData = await buildDetailedSessionNotificationData(userId, { sessionIds, includeAllSessions });
+      selectedSessions = {
+        live: sessionData._selectedLiveSessions || [],
+        post: sessionData._selectedPostSessions || [],
+      };
+
+      const userName = user.name || 'User';
+      const liveCount = selectedSessions.live.length;
+      const postCount = selectedSessions.post.length;
+      const totalCount = liveCount + postCount;
+
+      const formatSessionLine = (session, type) => {
+        const created = session.createdAt ? new Date(session.createdAt).toISOString() : 'N/A';
+        const status = session.status || 'unknown';
+        return `- ${type.toUpperCase()} | id: ${session._id} | status: ${status} | createdAt: ${created}`;
+      };
+
+      const liveLines = selectedSessions.live.map(s => formatSessionLine(s, 'live')).join('\n');
+      const postLines = selectedSessions.post.map(s => formatSessionLine(s, 'post')).join('\n');
+
+      emailBody = [
+        `Hi ${userName},`,
+        '',
+        'Admin Message:',
+        message,
+        '',
+        'Your Session Report:',
+        `- Total Selected Sessions: ${totalCount}`,
+        `- Live Sessions: ${liveCount}`,
+        `- Post Sessions: ${postCount}`,
+        '',
+        liveCount ? 'Live Session Details:\n' + liveLines : 'Live Session Details:\n- None',
+        '',
+        postCount ? 'Post Session Details:\n' + postLines : 'Post Session Details:\n- None',
+        '',
+        'Regards,',
+        'ConNavi Admin Team',
+      ].join('\n');
+
+      const escapeHtml = str =>
+        String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+
+      const buildRows = (sessions, typeLabel) => {
+        if (!sessions.length) {
+          return `<tr><td colspan="4" style="padding:10px;border:1px solid #e5e7eb;color:#6b7280;">No ${typeLabel.toLowerCase()} sessions</td></tr>`;
+        }
+        return sessions.map(s => {
+          const created = s.createdAt ? new Date(s.createdAt).toISOString() : 'N/A';
+          return `
+            <tr>
+              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s._id)}</td>
+              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s.status || 'unknown')}</td>
+              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(created)}</td>
+              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(typeLabel)}</td>
+            </tr>
+          `;
+        }).join('');
+      };
+
+      emailHtml = `
+        <div style="font-family:Arial,sans-serif;background:#f8fafc;padding:24px;">
+          <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+            <div style="background:#0f172a;color:#ffffff;padding:18px 22px;">
+              <h2 style="margin:0;font-size:20px;">ConNavi Session Update</h2>
+            </div>
+            <div style="padding:22px;">
+              <p style="margin-top:0;">Hi ${escapeHtml(userName)},</p>
+              <h3 style="margin:18px 0 8px;color:#111827;">Admin Message</h3>
+              <p style="margin:0 0 16px;white-space:pre-wrap;color:#1f2937;">${escapeHtml(message)}</p>
+
+              <h3 style="margin:18px 0 8px;color:#111827;">Your Session Report</h3>
+              <ul style="margin:0 0 16px;padding-left:18px;color:#1f2937;">
+                <li>Total Selected Sessions: ${totalCount}</li>
+                <li>Live Sessions: ${liveCount}</li>
+                <li>Post Sessions: ${postCount}</li>
+              </ul>
+
+              <h4 style="margin:18px 0 8px;color:#111827;">Live Session Details</h4>
+              <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+                <thead>
+                  <tr style="background:#f3f4f6;">
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Session ID</th>
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Status</th>
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Created At (UTC)</th>
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Type</th>
+                  </tr>
+                </thead>
+                <tbody>${buildRows(selectedSessions.live, 'Live')}</tbody>
+              </table>
+
+              <h4 style="margin:18px 0 8px;color:#111827;">Post Session Details</h4>
+              <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <thead>
+                  <tr style="background:#f3f4f6;">
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Session ID</th>
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Status</th>
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Created At (UTC)</th>
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Type</th>
+                  </tr>
+                </thead>
+                <tbody>${buildRows(selectedSessions.post, 'Post')}</tbody>
+              </table>
+
+              <p style="margin-top:20px;color:#4b5563;">Regards,<br/>ConNavi Admin Team</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    await sendEmail({ to: user.email, subject, text: emailBody, html: emailHtml || undefined });
+    return res.json({
+      success: true,
+      message: `Email sent to ${user.email}`,
+      data: includeReport
+        ? {
+            selectedSessions: {
+              live: selectedSessions.live,
+              post: selectedSessions.post,
+            },
+          }
+        : undefined,
+    });
   } catch (err) {
     console.error('sendEmailToUser error:', err);
     return res.status(500).json({ success: false, message: 'Server error sending email' });
