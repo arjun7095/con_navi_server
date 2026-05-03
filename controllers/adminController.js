@@ -793,14 +793,23 @@ exports.sendEmailToUser = async (req, res) => {
       const postCount = selectedSessions.post.length;
       const totalCount = liveCount + postCount;
 
-      const formatSessionLine = (session, type) => {
+      const toSessionSummary = (session, type) => ({
+        sessionId: String(session._id),
+        type,
+        status: session.status || 'unknown',
+        createdAt: session.createdAt ? new Date(session.createdAt).toISOString() : null,
+      });
+
+      const summarizedLive = selectedSessions.live.map(s => toSessionSummary(s, 'live'));
+      const summarizedPost = selectedSessions.post.map(s => toSessionSummary(s, 'post'));
+
+      const formatSessionLine = session => {
         const created = session.createdAt ? new Date(session.createdAt).toISOString() : 'N/A';
-        const status = session.status || 'unknown';
-        return `- ${type.toUpperCase()} | id: ${session._id} | status: ${status} | createdAt: ${created}`;
+        return `- ${session.type.toUpperCase()} | id: ${session.sessionId} | status: ${session.status} | createdAt: ${created}`;
       };
 
-      const liveLines = selectedSessions.live.map(s => formatSessionLine(s, 'live')).join('\n');
-      const postLines = selectedSessions.post.map(s => formatSessionLine(s, 'post')).join('\n');
+      const liveLines = summarizedLive.map(formatSessionLine).join('\n');
+      const postLines = summarizedPost.map(formatSessionLine).join('\n');
 
       emailBody = [
         `Hi ${userName},`,
@@ -829,18 +838,18 @@ exports.sendEmailToUser = async (req, res) => {
           .replace(/"/g, '&quot;')
           .replace(/'/g, '&#39;');
 
-      const buildRows = (sessions, typeLabel) => {
+      const buildRows = sessions => {
         if (!sessions.length) {
-          return `<tr><td colspan="4" style="padding:10px;border:1px solid #e5e7eb;color:#6b7280;">No ${typeLabel.toLowerCase()} sessions</td></tr>`;
+          return `<tr><td colspan="4" style="padding:10px;border:1px solid #e5e7eb;color:#6b7280;">No sessions</td></tr>`;
         }
         return sessions.map(s => {
-          const created = s.createdAt ? new Date(s.createdAt).toISOString() : 'N/A';
+          const created = s.createdAt || 'N/A';
           return `
             <tr>
-              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s._id)}</td>
+              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s.sessionId)}</td>
+              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s.type.toUpperCase())}</td>
               <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s.status || 'unknown')}</td>
               <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(created)}</td>
-              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(typeLabel)}</td>
             </tr>
           `;
         }).join('');
@@ -864,31 +873,20 @@ exports.sendEmailToUser = async (req, res) => {
                 <li>Post Sessions: ${postCount}</li>
               </ul>
 
-              <h4 style="margin:18px 0 8px;color:#111827;">Live Session Details</h4>
-              <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+              <h4 style="margin:18px 0 8px;color:#111827;">Selected Session Details</h4>
+              <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:16px;">
+              <table style="width:100%;min-width:680px;border-collapse:collapse;font-size:13px;">
                 <thead>
                   <tr style="background:#f3f4f6;">
                     <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Session ID</th>
+                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Type</th>
                     <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Status</th>
                     <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Created At (UTC)</th>
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Type</th>
                   </tr>
                 </thead>
-                <tbody>${buildRows(selectedSessions.live, 'Live')}</tbody>
+                <tbody>${buildRows([...summarizedLive, ...summarizedPost])}</tbody>
               </table>
-
-              <h4 style="margin:18px 0 8px;color:#111827;">Post Session Details</h4>
-              <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                <thead>
-                  <tr style="background:#f3f4f6;">
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Session ID</th>
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Status</th>
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Created At (UTC)</th>
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Type</th>
-                  </tr>
-                </thead>
-                <tbody>${buildRows(selectedSessions.post, 'Post')}</tbody>
-              </table>
+              </div>
 
               <p style="margin-top:20px;color:#4b5563;">Regards,<br/>ConNavi Admin Team</p>
             </div>
