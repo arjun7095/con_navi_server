@@ -832,32 +832,64 @@ exports.sendEmailToUser = async (req, res) => {
       ].join('\n');
 
       const allSessions = [...summarizedLive, ...summarizedPost];
-      const pad = (value, width) => String(value ?? '').padEnd(width, ' ');
-      const divider = '-'.repeat(108);
-      const rows = allSessions.length
-        ? allSessions
-            .map(s =>
-              `${pad(s.sessionId, 34)} | ${pad((s.type || '').toUpperCase(), 6)} | ${pad(s.status || 'unknown', 12)} | ${pad(s.createdAt || 'N/A', 36)}`
-            )
-            .join('\n')
-        : 'No selected sessions found.';
+      const escapeHtml = str =>
+        String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
 
-      const docContent = [
-        'ConNavi Selected Session Report',
-        divider,
-        `Generated At (UTC): ${new Date().toISOString()}`,
-        `User ID: ${String(userId)}`,
-        `Total Selected Sessions: ${totalCount}`,
-        `Live Sessions: ${liveCount}`,
-        `Post Sessions: ${postCount}`,
-        '',
-        'Session Details',
-        divider,
-        `${pad('Session ID', 34)} | ${pad('Type', 6)} | ${pad('Status', 12)} | ${pad('Created At (UTC)', 36)}`,
-        divider,
-        rows,
-        divider,
-      ].join('\n');
+      const tableRows = allSessions.length
+        ? allSessions
+            .map(
+              s => `
+                <tr>
+                  <td>${escapeHtml(s.sessionId)}</td>
+                  <td>${escapeHtml((s.type || '').toUpperCase())}</td>
+                  <td>${escapeHtml(s.status || 'unknown')}</td>
+                  <td>${escapeHtml(s.createdAt || 'N/A')}</td>
+                </tr>`
+            )
+            .join('')
+        : `<tr><td colspan="4">No selected sessions found.</td></tr>`;
+
+      const docContent = `
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              body { font-family: Arial, sans-serif; color: #111827; }
+              h1 { font-size: 22px; margin-bottom: 8px; }
+              .meta { margin: 6px 0; font-size: 13px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+              th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 12px; text-align: left; }
+              th { background: #f3f4f6; }
+            </style>
+          </head>
+          <body>
+            <h1>ConNavi Selected Session Report</h1>
+            <div class="meta"><strong>Generated At (UTC):</strong> ${escapeHtml(new Date().toISOString())}</div>
+            <div class="meta"><strong>User ID:</strong> ${escapeHtml(String(userId))}</div>
+            <div class="meta"><strong>Total Selected Sessions:</strong> ${totalCount}</div>
+            <div class="meta"><strong>Live Sessions:</strong> ${liveCount}</div>
+            <div class="meta"><strong>Post Sessions:</strong> ${postCount}</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Session ID</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Created At (UTC)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRows}
+              </tbody>
+            </table>
+          </body>
+        </html>
+      `;
 
       const reportFileName = `selected-sessions-${String(userId)}-${Date.now()}.doc`;
       emailAttachments = [
