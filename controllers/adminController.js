@@ -779,6 +779,7 @@ exports.sendEmailToUser = async (req, res) => {
 
     let emailBody = message;
     let emailHtml = null;
+    let emailAttachments = [];
     let selectedSessions = { live: [], post: [] };
 
     if (includeReport) {
@@ -830,72 +831,40 @@ exports.sendEmailToUser = async (req, res) => {
         'ConNavi Admin Team',
       ].join('\n');
 
-      const escapeHtml = str =>
-        String(str || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-
-      const buildRows = sessions => {
-        if (!sessions.length) {
-          return `<tr><td colspan="4" style="padding:10px;border:1px solid #e5e7eb;color:#6b7280;">No sessions</td></tr>`;
-        }
-        return sessions.map(s => {
-          const created = s.createdAt || 'N/A';
-          return `
-            <tr>
-              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s.sessionId)}</td>
-              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s.type.toUpperCase())}</td>
-              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(s.status || 'unknown')}</td>
-              <td style="padding:10px;border:1px solid #e5e7eb;">${escapeHtml(created)}</td>
-            </tr>
-          `;
-        }).join('');
+      const reportPayload = {
+        generatedAt: new Date().toISOString(),
+        userId: String(userId),
+        totalSelectedSessions: totalCount,
+        liveSessionCount: liveCount,
+        postSessionCount: postCount,
+        sessions: [...summarizedLive, ...summarizedPost],
       };
 
-      emailHtml = `
-        <div style="font-family:Arial,sans-serif;background:#f8fafc;padding:24px;">
-          <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
-            <div style="background:#0f172a;color:#ffffff;padding:18px 22px;">
-              <h2 style="margin:0;font-size:20px;">ConNavi Session Update</h2>
-            </div>
-            <div style="padding:22px;">
-              <p style="margin-top:0;">Hi ${escapeHtml(userName)},</p>
-              <h3 style="margin:18px 0 8px;color:#111827;">Admin Message</h3>
-              <p style="margin:0 0 16px;white-space:pre-wrap;color:#1f2937;">${escapeHtml(message)}</p>
+      const reportFileName = `selected-sessions-${String(userId)}-${Date.now()}.json`;
+      emailAttachments = [
+        {
+          filename: reportFileName,
+          content: JSON.stringify(reportPayload, null, 2),
+          contentType: 'application/json',
+        },
+      ];
 
-              <h3 style="margin:18px 0 8px;color:#111827;">Your Session Report</h3>
-              <ul style="margin:0 0 16px;padding-left:18px;color:#1f2937;">
-                <li>Total Selected Sessions: ${totalCount}</li>
-                <li>Live Sessions: ${liveCount}</li>
-                <li>Post Sessions: ${postCount}</li>
-              </ul>
+      emailBody = [
+        message,
+        '',
+        'Please refer to the attached document for the related selected session details.',
+      ].join('\n');
 
-              <h4 style="margin:18px 0 8px;color:#111827;">Selected Session Details</h4>
-              <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:16px;">
-              <table style="width:100%;min-width:680px;border-collapse:collapse;font-size:13px;">
-                <thead>
-                  <tr style="background:#f3f4f6;">
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Session ID</th>
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Type</th>
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Status</th>
-                    <th style="text-align:left;padding:10px;border:1px solid #e5e7eb;">Created At (UTC)</th>
-                  </tr>
-                </thead>
-                <tbody>${buildRows([...summarizedLive, ...summarizedPost])}</tbody>
-              </table>
-              </div>
-
-              <p style="margin-top:20px;color:#4b5563;">Regards,<br/>ConNavi Admin Team</p>
-            </div>
-          </div>
-        </div>
-      `;
+      emailHtml = `<p style="white-space:pre-wrap;">${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p><p>Please refer to the attached document for the related selected session details.</p>`;
     }
 
-    await sendEmail({ to: user.email, subject, text: emailBody, html: emailHtml || undefined });
+    await sendEmail({
+      to: user.email,
+      subject,
+      text: emailBody,
+      html: emailHtml || undefined,
+      attachments: emailAttachments,
+    });
     return res.json({
       success: true,
       message: `Email sent to ${user.email}`,
