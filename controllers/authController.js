@@ -85,6 +85,11 @@ exports.verifyPhoneAndRole = async (req, res) => {
 
     // Store/update FCM token
     if (fcmToken && !user.fcmTokens.includes(fcmToken)) {
+      // Ensure a token belongs to only one account at a time to prevent duplicate broadcasts.
+      await User.updateMany(
+        { _id: { $ne: user._id }, fcmTokens: fcmToken },
+        { $pull: { fcmTokens: fcmToken } }
+      );
       user.fcmTokens.push(fcmToken);
       await user.save();
     }

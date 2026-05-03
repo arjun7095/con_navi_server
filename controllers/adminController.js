@@ -164,11 +164,16 @@ async function getOrCreateAdminSettings() {
   return settings;
 }
 
-async function dispatchMonthlyReports({ title, bodyTemplate, sendPush = true, sendEmail = true }) {
+async function dispatchMonthlyReports({
+  title,
+  bodyTemplate,
+  sendPush = true,
+  sendEmail = true,
+}) {
   const finalTitle = title || DEFAULT_MONTHLY_REPORT_TITLE;
   const now = new Date();
-  const firstOfPrevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const lastOfPrevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59));
+  const rangeEnd = now;
+  const rangeStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   const users = await User.find({ role: 'user' }).select('_id name email fcmTokens');
 
@@ -180,14 +185,14 @@ async function dispatchMonthlyReports({ title, bodyTemplate, sendPush = true, se
   for (const user of users) {
     const [liveTotal, postTotal, liveCompleted, postCompleted, livePaused, postPaused, liveAbandoned, postAbandoned] =
       await Promise.all([
-        LiveConflictSession.countDocuments({ userId: user._id, createdAt: { $gte: firstOfPrevMonth, $lte: lastOfPrevMonth } }),
-        PostConflictSession.countDocuments({ userId: user._id, createdAt: { $gte: firstOfPrevMonth, $lte: lastOfPrevMonth } }),
-        LiveConflictSession.countDocuments({ userId: user._id, status: 'completed', createdAt: { $gte: firstOfPrevMonth, $lte: lastOfPrevMonth } }),
-        PostConflictSession.countDocuments({ userId: user._id, status: 'completed', createdAt: { $gte: firstOfPrevMonth, $lte: lastOfPrevMonth } }),
-        LiveConflictSession.countDocuments({ userId: user._id, status: 'paused', createdAt: { $gte: firstOfPrevMonth, $lte: lastOfPrevMonth } }),
-        PostConflictSession.countDocuments({ userId: user._id, status: 'paused', createdAt: { $gte: firstOfPrevMonth, $lte: lastOfPrevMonth } }),
-        LiveConflictSession.countDocuments({ userId: user._id, status: 'abandoned', createdAt: { $gte: firstOfPrevMonth, $lte: lastOfPrevMonth } }),
-        PostConflictSession.countDocuments({ userId: user._id, status: 'abandoned', createdAt: { $gte: firstOfPrevMonth, $lte: lastOfPrevMonth } }),
+        LiveConflictSession.countDocuments({ userId: user._id, createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+        PostConflictSession.countDocuments({ userId: user._id, createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+        LiveConflictSession.countDocuments({ userId: user._id, status: 'completed', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+        PostConflictSession.countDocuments({ userId: user._id, status: 'completed', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+        LiveConflictSession.countDocuments({ userId: user._id, status: 'paused', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+        PostConflictSession.countDocuments({ userId: user._id, status: 'paused', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+        LiveConflictSession.countDocuments({ userId: user._id, status: 'abandoned', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
+        PostConflictSession.countDocuments({ userId: user._id, status: 'abandoned', createdAt: { $gte: rangeStart, $lte: rangeEnd } }),
       ]);
 
     const totalSessions = liveTotal + postTotal;
@@ -196,18 +201,20 @@ async function dispatchMonthlyReports({ title, bodyTemplate, sendPush = true, se
     const totalUnresolved = liveAbandoned + postAbandoned;
     const userName = user.name || 'there';
 
-    const reportBody = bodyTemplate
-      ? bodyTemplate
-          .replace('{name}', userName)
-          .replace('{total}', totalSessions)
-          .replace('{completed}', totalCompleted)
-          .replace('{paused}', totalPaused)
-          .replace('{unresolved}', totalUnresolved)
-          .replace('{liveSessions}', liveTotal)
-          .replace('{postSessions}', postTotal)
-          .replace('{liveCompleted}', liveCompleted)
-          .replace('{postCompleted}', postCompleted)
-      : `Hi ${userName}! Your monthly summary: ${totalSessions} session(s) started, ${totalCompleted} completed, ${totalPaused} paused, ${totalUnresolved} unresolved.`;
+    const reportBody = totalSessions === 0
+      ? `Hi ${userName}, you do not have any sessions in the last 30 days.`
+      : (bodyTemplate
+        ? bodyTemplate
+            .replace('{name}', userName)
+            .replace('{total}', totalSessions)
+            .replace('{completed}', totalCompleted)
+            .replace('{paused}', totalPaused)
+            .replace('{unresolved}', totalUnresolved)
+            .replace('{liveSessions}', liveTotal)
+            .replace('{postSessions}', postTotal)
+            .replace('{liveCompleted}', liveCompleted)
+            .replace('{postCompleted}', postCompleted)
+        : `Hi ${userName}! Your last 30 days summary: ${totalSessions} session(s) started, ${totalCompleted} completed, ${totalPaused} paused, ${totalUnresolved} unresolved.`);
 
     if (sendPush && Array.isArray(user.fcmTokens) && user.fcmTokens.length) {
       const pushData = {
@@ -239,10 +246,10 @@ async function dispatchMonthlyReports({ title, bodyTemplate, sendPush = true, se
 
   return {
     title: finalTitle,
-    period: {
-      startDate: firstOfPrevMonth,
-      endDate: lastOfPrevMonth,
-      monthKey: formatMonthKey(firstOfPrevMonth),
+      period: {
+      startDate: rangeStart,
+      endDate: rangeEnd,
+      monthKey: formatMonthKey(rangeStart),
     },
     summary: {
       totalUsers: users.length,
@@ -713,8 +720,18 @@ exports.sendNotificationToUser = async (req, res) => {
 
 exports.sendMonthlyNotificationsToAll = async (req, res) => {
   try {
-    const { title = DEFAULT_MONTHLY_REPORT_TITLE, bodyTemplate = '', sendPush = true, sendEmail = true } = req.body;
-    const result = await dispatchMonthlyReports({ title, bodyTemplate, sendPush, sendEmail });
+    const {
+      title = DEFAULT_MONTHLY_REPORT_TITLE,
+      bodyTemplate = '',
+      sendPush = true,
+      sendEmail = true,
+    } = req.body;
+    const result = await dispatchMonthlyReports({
+      title,
+      bodyTemplate,
+      sendPush,
+      sendEmail,
+    });
     return res.json({ success: true, message: `Monthly reports dispatched to ${result.summary.totalUsers} users`, ...result });
   } catch (err) {
     console.error('sendMonthlyNotificationsToAll error:', err);

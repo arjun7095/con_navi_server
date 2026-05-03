@@ -21,10 +21,18 @@ const sendPushToUser = async (userId, title, body, data = {}, dryRun = false) =>
       console.log(`No FCM tokens for user ${userId}`);
       return { successCount: 0, failureCount: 0, failedTokensCount: 0, message: 'No tokens' };
     }
+
+    // Deduplicate tokens to avoid duplicate notifications to same device.
+    const uniqueTokens = [...new Set(user.fcmTokens.filter(Boolean))];
+    if (uniqueTokens.length !== user.fcmTokens.length) {
+      user.fcmTokens = uniqueTokens;
+      await user.save();
+    }
+
     const message = {
       notification: { title, body },
       data: serializeNotificationData(data),
-      tokens: user.fcmTokens,
+      tokens: uniqueTokens,
       android: { priority: 'high' },
       apns: {
         headers: { 'apns-priority': '10' },
@@ -50,7 +58,7 @@ const sendPushToUser = async (userId, title, body, data = {}, dryRun = false) =>
 
         console.warn(
           `FCM token #${idx} failed for user ${userId}: ` +
-          `code=${code}, msg=${msg}, token=${user.fcmTokens[idx]?.substring(0, 12) || '??'}...`
+          `code=${code}, msg=${msg}, token=${uniqueTokens[idx]?.substring(0, 12) || '??'}...`
         );
 
         if (
@@ -60,7 +68,7 @@ const sendPushToUser = async (userId, title, body, data = {}, dryRun = false) =>
           code === 'messaging/device-message-rate-exceeded' ||
           (code === 'messaging/unknown-error' && msg?.toLowerCase().includes('not-registered'))
         ) {
-          failedTokens.push(user.fcmTokens[idx]);
+          failedTokens.push(uniqueTokens[idx]);
         }
       }
     });

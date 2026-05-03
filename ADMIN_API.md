@@ -403,7 +403,7 @@ Response (200, broadcast)
 ```
 
 ### POST `/api/admin/notifications/monthly`
-Triggers immediate monthly dispatch to all users.
+Triggers immediate last-30-days dispatch to all users.
 
 Testing scheduler note:
 - Auto-dispatch cron default is currently every 2 minutes (`*/2 * * * *`) for testing.
@@ -427,9 +427,9 @@ Response (200)
   "message": "Monthly reports dispatched to 84 users",
   "title": "Your I Feel Heard Monthly Trend Report",
   "period": {
-    "startDate": "2026-03-01T00:00:00.000Z",
-    "endDate": "2026-03-31T23:59:59.000Z",
-    "monthKey": "2026-03"
+    "startDate": "2026-04-03T09:00:00.000Z",
+    "endDate": "2026-05-03T09:00:00.000Z",
+    "monthKey": "2026-04"
   },
   "summary": {
     "totalUsers": 84,
@@ -438,6 +438,10 @@ Response (200)
   }
 }
 ```
+
+No-session behavior:
+- If a user has `0` sessions in the last 30 days, they receive:
+  - `Hi {name}, you do not have any sessions in the last 30 days.`
 
 ---
 
