@@ -137,27 +137,99 @@ function buildSelectedSessionsPdfBuffer({ userId, totalCount, liveCount, postCou
     doc.fontSize(12).text('Session Details');
     doc.moveDown(0.4);
 
-    const headerY = doc.y;
-    doc.fontSize(10).text('Session ID', 40, headerY);
-    doc.text('Type', 255, headerY);
-    doc.text('Status', 320, headerY);
-    doc.text('Created At (UTC)', 390, headerY);
-    doc.moveTo(40, headerY + 14).lineTo(555, headerY + 14).stroke();
-    doc.moveDown(0.8);
-
     if (!sessions.length) {
       doc.fontSize(10).text('No selected sessions found.');
     } else {
-      sessions.forEach(session => {
-        const rowY = doc.y;
-        const createdAt = session.createdAt || 'N/A';
-        doc.fontSize(9).text(String(session.sessionId), 40, rowY, { width: 205, ellipsis: true });
-        doc.text(String(session.type || '').toUpperCase(), 255, rowY, { width: 55 });
-        doc.text(String(session.status || 'unknown'), 320, rowY, { width: 65 });
-        doc.text(String(createdAt), 390, rowY, { width: 165, ellipsis: true });
-        doc.moveDown(1.1);
+      const pageBottom = 760;
+      const renderLine = (label, value) => {
+        if (doc.y > pageBottom) doc.addPage();
+        doc.font('Helvetica-Bold').fontSize(9).text(`${label}: `, { continued: true });
+        doc.font('Helvetica').text(String(value ?? 'N/A'));
+      };
+
+      sessions.forEach((session, index) => {
+        if (doc.y > pageBottom) doc.addPage();
+        doc.font('Helvetica-Bold').fontSize(10).text(`Session ${index + 1}`);
+        renderLine('Session ID', session.sessionId);
+        renderLine('Type', String(session.type || '').toUpperCase());
+        renderLine('Status', session.status || 'unknown');
+        renderLine('Created At (UTC)', session.createdAt || 'N/A');
+        renderLine('Updated At (UTC)', session.updatedAt || 'N/A');
+        renderLine('Started At (UTC)', session.startedAt || 'N/A');
+        renderLine('Paused At (UTC)', session.pausedAt || 'N/A');
+        renderLine('Resumed At (UTC)', session.resumedAt || 'N/A');
+        renderLine('Completed At (UTC)', session.completedAt || 'N/A');
+        renderLine('Total Duration (Minutes)', session.totalDurationMinutes ?? 'N/A');
+        renderLine('Full Session Data (JSON)', JSON.stringify(session.fullData || {}, null, 2));
+        doc.moveDown(0.6);
+        doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#CCCCCC').stroke();
+        doc.moveDown(0.6);
       });
     }
+
+    doc.end();
+  });
+}
+
+function buildMonthlySessionsPdfBuffer({ userId, userName, rangeStart, rangeEnd, summary, sessions }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 36, size: 'A4' });
+    const chunks = [];
+    doc.on('data', chunk => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const lineGap = 2;
+    const pageBottom = 760;
+    const renderLine = (label, value) => {
+      if (doc.y > pageBottom) doc.addPage();
+      doc.font('Helvetica-Bold').fontSize(9).text(`${label}: `, { continued: true });
+      doc.font('Helvetica').text(String(value ?? 'N/A'), { lineGap });
+    };
+
+    doc.fontSize(16).font('Helvetica-Bold').text('I Feel Heard Monthly Session Report', { underline: true });
+    doc.moveDown(0.4);
+    doc.fontSize(10).font('Helvetica').text(`Generated At (UTC): ${new Date().toISOString()}`);
+    doc.text(`User ID: ${String(userId)}`);
+    doc.text(`User Name: ${String(userName || 'User')}`);
+    doc.text(`Report Window (UTC): ${rangeStart.toISOString()} to ${rangeEnd.toISOString()}`);
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold').text('Summary');
+    doc.font('Helvetica');
+    doc.text(`Total Sessions: ${summary.total}`);
+    doc.text(`Completed: ${summary.completed}`);
+    doc.text(`Paused: ${summary.paused}`);
+    doc.text(`Unresolved: ${summary.unresolved}`);
+    doc.text(`Live Sessions: ${summary.live}`);
+    doc.text(`Post Sessions: ${summary.post}`);
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold').text('All Session Details (Last 30 Days)');
+    doc.moveDown(0.3);
+
+    if (!sessions.length) {
+      doc.font('Helvetica').fontSize(10).text('No sessions found in the last 30 days.');
+      doc.end();
+      return;
+    }
+
+    sessions.forEach((session, index) => {
+      if (doc.y > pageBottom) doc.addPage();
+      doc.font('Helvetica-Bold').fontSize(10).text(`Session ${index + 1}`);
+      renderLine('Session ID', session._id);
+      renderLine('Type', String(session._sessionType || '').toUpperCase());
+      renderLine('Status', session.status || 'unknown');
+      renderLine('Created At (UTC)', session.createdAt ? new Date(session.createdAt).toISOString() : 'N/A');
+      renderLine('Updated At (UTC)', session.updatedAt ? new Date(session.updatedAt).toISOString() : 'N/A');
+      renderLine('Started At (UTC)', session.startedAt ? new Date(session.startedAt).toISOString() : 'N/A');
+      renderLine('Paused At (UTC)', session.pausedAt ? new Date(session.pausedAt).toISOString() : 'N/A');
+      renderLine('Resumed At (UTC)', session.resumedAt ? new Date(session.resumedAt).toISOString() : 'N/A');
+      renderLine('Completed At (UTC)', session.completedAt ? new Date(session.completedAt).toISOString() : 'N/A');
+      renderLine('Total Duration (Minutes)', session.totalDurationMinutes ?? 'N/A');
+      renderLine('Full Session Data (JSON)', JSON.stringify(session));
+      doc.moveDown(0.6);
+      doc.moveTo(36, doc.y).lineTo(559, doc.y).strokeColor('#CCCCCC').stroke();
+      doc.moveDown(0.6);
+    });
 
     doc.end();
   });
@@ -283,9 +355,80 @@ async function dispatchMonthlyReports({
 
     if (sendEmail && user.email) {
       try {
-        await sendEmail({ to: user.email, subject: finalTitle, text: reportBody });
+        const [liveSessions, postSessions] = await Promise.all([
+          LiveConflictSession.find({ userId: user._id, createdAt: { $gte: rangeStart, $lte: rangeEnd } }).sort({ createdAt: -1 }).lean(),
+          PostConflictSession.find({ userId: user._id, createdAt: { $gte: rangeStart, $lte: rangeEnd } }).sort({ createdAt: -1 }).lean(),
+        ]);
+        const detailedSessions = [
+          ...liveSessions.map(s => ({ ...s, _sessionType: 'live' })),
+          ...postSessions.map(s => ({ ...s, _sessionType: 'post' })),
+        ].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+        const pdfBuffer = await buildMonthlySessionsPdfBuffer({
+          userId: user._id,
+          userName,
+          rangeStart,
+          rangeEnd,
+          summary: {
+            total: totalSessions,
+            completed: totalCompleted,
+            paused: totalPaused,
+            unresolved: totalUnresolved,
+            live: liveTotal,
+            post: postTotal,
+          },
+          sessions: detailedSessions,
+        });
+
+        const professionalText = [
+          `Dear ${userName},`,
+          '',
+          'Please find your monthly session report for the last 30 days.',
+          '',
+          `Total sessions: ${totalSessions}`,
+          `Completed: ${totalCompleted}`,
+          `Paused: ${totalPaused}`,
+          `Unresolved: ${totalUnresolved}`,
+          `Live sessions: ${liveTotal}`,
+          `Post sessions: ${postTotal}`,
+          '',
+          'A detailed PDF report is attached with complete session information for each session in this period.',
+          '',
+          'Regards,',
+          'I Feel Heard Team',
+        ].join('\n');
+
+        const professionalHtml = `
+          <div style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.5;">
+            <p>Dear ${userName.replace(/</g, '&lt;').replace(/>/g, '&gt;')},</p>
+            <p>Please find your monthly session report for the last 30 days.</p>
+            <table style="border-collapse:collapse;">
+              <tr><td style="padding:4px 10px 4px 0;"><strong>Total sessions</strong></td><td>${totalSessions}</td></tr>
+              <tr><td style="padding:4px 10px 4px 0;"><strong>Completed</strong></td><td>${totalCompleted}</td></tr>
+              <tr><td style="padding:4px 10px 4px 0;"><strong>Paused</strong></td><td>${totalPaused}</td></tr>
+              <tr><td style="padding:4px 10px 4px 0;"><strong>Unresolved</strong></td><td>${totalUnresolved}</td></tr>
+              <tr><td style="padding:4px 10px 4px 0;"><strong>Live sessions</strong></td><td>${liveTotal}</td></tr>
+              <tr><td style="padding:4px 10px 4px 0;"><strong>Post sessions</strong></td><td>${postTotal}</td></tr>
+            </table>
+            <p>A detailed PDF report is attached with complete session information for each session in this period.</p>
+            <p>Regards,<br/>I Feel Heard Team</p>
+          </div>
+        `;
+
+        await sendEmail({
+          to: user.email,
+          subject: finalTitle,
+          text: professionalText,
+          html: professionalHtml,
+          attachments: [{
+            filename: `monthly-session-report-${String(user._id)}-${Date.now()}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          }],
+        });
         emailSuccessCount += 1;
-      } catch (_) {
+      } catch (err) {
+        console.error(`monthly email failed for user ${user._id}:`, err?.message || err);
         emailFailureCount += 1;
       }
     }
@@ -846,6 +989,13 @@ exports.sendEmailToUser = async (req, res) => {
         type,
         status: session.status || 'unknown',
         createdAt: session.createdAt ? new Date(session.createdAt).toISOString() : null,
+        updatedAt: session.updatedAt ? new Date(session.updatedAt).toISOString() : null,
+        startedAt: session.startedAt ? new Date(session.startedAt).toISOString() : null,
+        pausedAt: session.pausedAt ? new Date(session.pausedAt).toISOString() : null,
+        resumedAt: session.resumedAt ? new Date(session.resumedAt).toISOString() : null,
+        completedAt: session.completedAt ? new Date(session.completedAt).toISOString() : null,
+        totalDurationMinutes: session.totalDurationMinutes ?? null,
+        fullData: session,
       });
 
       const summarizedLive = selectedSessions.live.map(s => toSessionSummary(s, 'live'));

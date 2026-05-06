@@ -20,8 +20,9 @@ const transporter = nodemailer.createTransport({
  * @param {Array} [options.attachments] - Nodemailer attachments
  */
 const sendEmail = async ({ to, subject, text, html, attachments = [] }) => {
+  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
   const info = await transporter.sendMail({
-    from: `"${process.env.SMTP_FROM_NAME || 'ConNavi Admin'}" <${process.env.SMTP_USER}>`,
+    from: `"${process.env.SMTP_FROM_NAME || 'ConNavi Admin'}" <${fromEmail}>`,
     to,
     subject,
     text,
