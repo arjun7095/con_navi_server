@@ -212,20 +212,88 @@ function buildMonthlySessionsPdfBuffer({ userId, userName, rangeStart, rangeEnd,
       return;
     }
 
+    const toIsoOrNA = value => (value ? new Date(value).toISOString() : 'N/A');
+    const renderStepSection = (title, entries) => {
+      doc.font('Helvetica-Bold').fontSize(9).text(title);
+      entries.forEach(([label, value]) => {
+        renderLine(label, value);
+      });
+      doc.moveDown(0.2);
+    };
+
     sessions.forEach((session, index) => {
       if (doc.y > pageBottom) doc.addPage();
       doc.font('Helvetica-Bold').fontSize(10).text(`Session ${index + 1}`);
       renderLine('Session ID', session._id);
       renderLine('Type', String(session._sessionType || '').toUpperCase());
       renderLine('Status', session.status || 'unknown');
-      renderLine('Created At (UTC)', session.createdAt ? new Date(session.createdAt).toISOString() : 'N/A');
-      renderLine('Updated At (UTC)', session.updatedAt ? new Date(session.updatedAt).toISOString() : 'N/A');
-      renderLine('Started At (UTC)', session.startedAt ? new Date(session.startedAt).toISOString() : 'N/A');
-      renderLine('Paused At (UTC)', session.pausedAt ? new Date(session.pausedAt).toISOString() : 'N/A');
-      renderLine('Resumed At (UTC)', session.resumedAt ? new Date(session.resumedAt).toISOString() : 'N/A');
-      renderLine('Completed At (UTC)', session.completedAt ? new Date(session.completedAt).toISOString() : 'N/A');
+      renderLine('Created At (UTC)', toIsoOrNA(session.createdAt));
+      renderLine('Updated At (UTC)', toIsoOrNA(session.updatedAt));
+      renderLine('Started At (UTC)', toIsoOrNA(session.startedAt));
+      renderLine('Paused At (UTC)', toIsoOrNA(session.pausedAt));
+      renderLine('Resumed At (UTC)', toIsoOrNA(session.resumedAt));
+      renderLine('Completed At (UTC)', toIsoOrNA(session.completedAt));
       renderLine('Total Duration (Minutes)', session.totalDurationMinutes ?? 'N/A');
-      renderLine('Full Session Data (JSON)', JSON.stringify(session));
+
+      if (session._sessionType === 'post') {
+        renderStepSection('Step 1 - Initial Distress', [
+          ['Rating', session.step1?.rating ?? 'N/A'],
+          ['Category', session.step1?.category ?? 'N/A'],
+        ]);
+        renderStepSection('Step 2 - Feelings', [
+          ['Present Feelings', (session.step2?.presentFeelings || []).join(', ') || 'N/A'],
+          ['Desired Feelings', (session.step2?.desiredFeelings || []).join(', ') || 'N/A'],
+        ]);
+        renderStepSection('Step 3 - Reflection', [
+          ['Experience', session.step3?.experience ?? 'N/A'],
+          ['React', session.step3?.react ?? 'N/A'],
+          ['Assumption', session.step3?.assumption ?? 'N/A'],
+          ['Thoughts', session.step3?.thoughts ?? 'N/A'],
+          ['Understanding', session.step3?.understanding ?? 'N/A'],
+          ['Terms', (session.step3?.terms || []).map(t => `${t.option}: ${t.description}`).join(' | ') || 'N/A'],
+        ]);
+        renderStepSection('Step 4 - Final Rating', [
+          ['Rating', session.step4?.rating ?? 'N/A'],
+          ['Category', session.step4?.category ?? 'N/A'],
+          ['Feedback', session.step4?.feedbackMessage ?? 'N/A'],
+        ]);
+        renderStepSection('Step 5 - Completion', [
+          ['Status', session.step5?.status ?? 'N/A'],
+          ['Conflict Time (Minutes)', session.conflictTime ?? 'N/A'],
+        ]);
+      } else {
+        renderStepSection('Step 1 - Initial Distress', [
+          ['Rating', session.initialDistress?.rating ?? 'N/A'],
+          ['Category', session.initialDistress?.category ?? 'N/A'],
+        ]);
+        renderStepSection('Step 2 - Breathing Exercise', [
+          ['Used Breathing Exercise', session.isBreathingExercise === true ? 'Yes' : 'No'],
+        ]);
+        renderStepSection('Step 3 - Feelings', [
+          ['Present Feelings', (session.presentFeelings || []).join(', ') || 'N/A'],
+          ['Desired Feelings', (session.desiredFeelings || []).join(', ') || 'N/A'],
+        ]);
+        renderStepSection('Step 4 - Break', [
+          ['Chose To Break', session.choseToBreak === true ? 'Yes' : 'No'],
+          ['Break Reason', session.breakReason || 'N/A'],
+          ['Resume At (UTC)', toIsoOrNA(session.resumeAt)],
+        ]);
+        renderStepSection('Step 5 - Non-negotiables', [
+          ['Non-negotiables Agreed', session.nonNegotiablesAgreed === true ? 'Yes' : 'No'],
+        ]);
+        renderStepSection('Steps 6-10 - Conversation Cycles', [
+          ['Cycle Count', Array.isArray(session.conversationCycles) ? session.conversationCycles.length : 0],
+          ['Completed Cycles', (session.conversationCycles || []).filter(c => c.completed).length],
+        ]);
+        renderStepSection('Step 11 - Final Distress', [
+          ['Rating', session.finalDistress?.rating ?? 'N/A'],
+          ['Category', session.finalDistress?.category ?? 'N/A'],
+        ]);
+        renderStepSection('Step 12 - Completion', [
+          ['Is Completed', session.isCompleted === true ? 'Yes' : 'No'],
+        ]);
+      }
+
       doc.moveDown(0.6);
       doc.moveTo(36, doc.y).lineTo(559, doc.y).strokeColor('#CCCCCC').stroke();
       doc.moveDown(0.6);
@@ -444,7 +512,12 @@ async function dispatchMonthlyReports({
     summary: {
       totalUsers: users.length,
       push: { enabled: !!sendPush, successCount: pushSuccessCount, failureCount: pushFailureCount },
-      email: { enabled: !!sendEmail, successCount: emailSuccessCount, failureCount: emailFailureCount },
+      email: {
+        enabled: !!sendEmail,
+        sentMail: !!sendEmail && emailSuccessCount > 0,
+        successCount: emailSuccessCount,
+        failureCount: emailFailureCount,
+      },
     },
   };
 }
