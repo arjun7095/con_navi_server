@@ -942,7 +942,8 @@ exports.sendNotificationToUser = async (req, res) => {
       for (const user of users) {
         const notificationData = includeReport
           ? await buildDetailedSessionNotificationData(user._id, { sessionIds, includeAllSessions })
-          : { type: 'admin_notification' };
+          : { type: 'onDemand' };
+        notificationData.type = 'onDemand';
         if (notificationData._selectedLiveSessions) delete notificationData._selectedLiveSessions;
         if (notificationData._selectedPostSessions) delete notificationData._selectedPostSessions;
         const result = await sendPushToUser(user._id.toString(), title, body, notificationData);
@@ -959,7 +960,8 @@ exports.sendNotificationToUser = async (req, res) => {
 
     const notificationData = includeReport
       ? await buildDetailedSessionNotificationData(userId, { sessionIds, includeAllSessions })
-      : { type: 'admin_notification' };
+      : { type: 'onDemand' };
+    notificationData.type = 'onDemand';
 
     const result = await sendPushToUser(userId, title, body, notificationData);
     const responseData = includeReport
